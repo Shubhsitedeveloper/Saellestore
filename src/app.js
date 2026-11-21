@@ -9,7 +9,7 @@ import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
-import { mats, setAniso, redraw, texturesReady, FONT_D, FONT_B, BRAND, roundRect, spaced } from "./kit.js";
+import { GLASS, mats, setAniso, redraw, texturesReady, FONT_D, FONT_B, BRAND, roundRect, spaced } from "./kit.js";
 import { PRODUCTS, BY_ID, SECTIONS, SEC_BY_ID, TOUR, fmt } from "./data.js";
 import { buildProduct } from "./products.js";
 import { buildWorld, DIM } from "./world.js";
@@ -100,6 +100,7 @@ async function boot() {
   const norm = (o) => { if (!o) return null; const w = new THREE.Group(); o.position.set(0, 0, 0); o.updateMatrixWorld(true); const b = new THREE.Box3().setFromObject(o); const c = b.getCenter(new THREE.Vector3()); o.position.sub(new THREE.Vector3(c.x, b.min.y, c.z)); w.add(o); w.traverse(m => { if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; } }); return w; };
   const models = { tree: norm(tree), plant4: norm(plant4), vase1: norm(vase1), vase3: norm(vase3), brass: norm(brass), stool: norm(stool), ottoman: norm(ottoman), side: norm(side), lamp: norm(lamp) };
 
+  GLASS.cheap = LOW;
   const W = buildWorld(scene, { extEnv, models, quality: LOW ? "low" : "high" });
   W.mainCamera = camera;
   await Promise.race([texturesReady(), new Promise(r => setTimeout(r, 20000))]);
@@ -117,8 +118,8 @@ async function boot() {
   if (!LOW) shadowSpot(0, 3.95, 1.4, 0, 1.5, 16, 0.6);
   // wall washers on each side: warm, wide
   for (const s of [-1, 1]) for (const z of [-2.0, -7.6]) {
-    const w = new THREE.SpotLight(0xffe2c4, 34, 9, 0.85, 0.9, 1.3);
-    w.position.set(s * 3.4, 3.9, z); w.target.position.set(s * 7, 1.4, z); scene.add(w, w.target);
+    const w = new THREE.SpotLight(0xffe2c4, 26, 9, 0.7, 0.9, 1.3);
+    w.position.set(s * 3.4, 3.9, z); w.target.position.set(s * 7, 0.9, z); scene.add(w, w.target);
   }
   const desk = new THREE.SpotLight(0xffe2c4, 22, 8, 0.8, 0.9, 1.4); desk.position.set(0, 3.9, DIM.deskZ + 0.6); desk.target.position.set(0, 0.8, DIM.deskZ - 0.6); scene.add(desk, desk.target);
   // facade washers grazing the stone
@@ -150,9 +151,9 @@ async function boot() {
   let gtao = null;
   if (!LOW) {
     gtao = new GTAOPass(scene, camera, innerWidth, innerHeight);
-    gtao.updateGtaoMaterial({ radius: 0.2, distanceExponent: 1.5, thickness: 1, scale: 1.0, samples: 12 });
+    gtao.updateGtaoMaterial({ radius: 0.4, distanceExponent: 1.8, thickness: 1, scale: 1.0, samples: 12 });
     gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 5, rings: 2, samples: 12 });
-    gtao.blendIntensity = 0.9;
+    gtao.blendIntensity = 1.0;
     composer.addPass(gtao);
   }
   const bloom = new UnrealBloomPass(size.clone().multiplyScalar(0.5), 0.28, 0.55, 1.0);
@@ -171,7 +172,7 @@ async function boot() {
         float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
         c = mix(c, c * vec3(1.03, 1.0, 0.95), smoothstep(0.35, 0.9, lum));       // warm highlights
         c = mix(c, c + vec3(-0.004, 0.0, 0.012), 1.0 - smoothstep(0.0, 0.25, lum)); // cool, slightly lifted shadows
-        c = mix(vec3(lum), c, 1.04);
+        c = mix(vec3(lum), c, 0.97);
         c *= mix(1.0, 0.8, smoothstep(0.12, 0.62, r2 * 1.6));                  // vignette
         float n = h(vUv * uRes + fract(uTime * 13.7) * 100.0) - 0.5;
         c += n * uGrain * (1.0 - lum * 0.6);
@@ -225,6 +226,8 @@ async function boot() {
   scene.updateMatrixWorld(true);
   for (const e of W.emitters) { e.wp = e.obj ? e.obj.localToWorld(e.p.clone()) : e.p.clone(); e.wd = (e.obj ? e.d.clone().transformDirection(e.obj.matrixWorld) : e.d.clone()).normalize(); e.acc = 0; }
   const motes = makeMotes(LOW ? 120 : 320); scene.add(motes.points);
+  // the soft floor reflection doesn't need the small stuff: skip it there (big saving, invisible at that blur)
+  W.noReflect = [...W.products.map(i => i.root), air.points, motes.points];
 
   // ---------------- thumbnails ----------------
   const thumbs = makeThumbs(renderer, PRODUCTS, scene.environment);
@@ -277,6 +280,9 @@ async function boot() {
   syncCart();
   buildList();
   basket.forEach(i => cart.fill(BY_ID[i.id]));
+  listHooks.add = (id) => addToBasket(id);
+  let started = false;
+  listHooks.pause = (on) => { if (started) renderer.setAnimationLoop(on ? null : loop); };
 
   // compile every shader now, so turning to a new corner never stalls; the room never moves, so shadows render once
   try { await Promise.race([renderer.compileAsync(scene, camera), new Promise(r => setTimeout(r, 8000))]); } catch (e) { /* older drivers: compile lazily */ }
@@ -286,7 +292,7 @@ async function boot() {
   ui.load.hidden = true;
   ui.enter.disabled = false;
   ui.intro.classList.add("is-ready");
-  ui.enter.focus({ preventScroll: true });
+  if (ui.list.hidden) ui.enter.focus({ preventScroll: true });
   ui.enter.addEventListener("click", enter);
   ui.introList.addEventListener("click", openList);
 
@@ -363,12 +369,22 @@ async function boot() {
     for (let guard = 0; guard < 4; guard++) {
       const hit = W.obstacles.filter(o => segHits(ax, az, x, z, o, 0.32)).sort((p, q) => Math.hypot((p.x0 + p.x1) / 2 - ax, (p.z0 + p.z1) / 2 - az) - Math.hypot((q.x0 + q.x1) / 2 - ax, (q.z0 + q.z1) / 2 - az))[0];
       if (!hit) break;
-      const m = 0.62, cx = (hit.x0 + hit.x1) / 2;
-      // pass on the side with more room, and nearer the line we wanted
-      const left = hit.x0 - m, right = hit.x1 + m;
-      const sx = (left < W.bounds.x0 + 0.1) ? right : (right > W.bounds.x1 - 0.1) ? left : ((ax + x) / 2 < cx ? left : right);
-      const zEdge = (zz) => zz > hit.z1 ? hit.z1 + m : zz < hit.z0 ? hit.z0 - m : zz;
-      const p1 = { x: sx, z: zEdge(az) }, p2 = { x: sx, z: zEdge(z) };
+      const m = 0.62, cx = (hit.x0 + hit.x1) / 2, cz = (hit.z0 + hit.z1) / 2;
+      const B = (az > DIM.front || z > DIM.front) ? W.outside : W.bounds;
+      let p1, p2;
+      if (Math.abs(x - ax) > Math.abs(z - az)) {
+        // mostly sideways (out on the street): go round above or below it
+        const up = hit.z1 + m, dn = hit.z0 - m;
+        const sz = (dn < B.z0 + 0.1) ? up : (up > B.z1 - 0.1) ? dn : ((az + z) / 2 < cz ? dn : up);
+        const xEdge = (xx) => xx > hit.x1 ? hit.x1 + m : xx < hit.x0 ? hit.x0 - m : xx;
+        p1 = { x: xEdge(ax), z: sz }; p2 = { x: xEdge(x), z: sz };
+      } else {
+        // pass on the side with more room, and nearer the line we wanted
+        const left = hit.x0 - m, right = hit.x1 + m;
+        const sx = (left < B.x0 + 0.1) ? right : (right > B.x1 - 0.1) ? left : ((ax + x) / 2 < cx ? left : right);
+        const zEdge = (zz) => zz > hit.z1 ? hit.z1 + m : zz < hit.z0 ? hit.z0 - m : zz;
+        p1 = { x: sx, z: zEdge(az) }; p2 = { x: sx, z: zEdge(z) };
+      }
       if (Math.hypot(p1.x - ax, p1.z - az) > 0.2) pts.push(p1);
       pts.push(p2); ax = p2.x; az = p2.z;
     }
@@ -397,7 +413,8 @@ async function boot() {
     let start = 0;
     // starting from the street: walk up to the door, let it open, then step in
     if (rig.z >= DIM.front - 0.3) {
-      tl.call(() => { tl.pause(); const g = gsap.to(rig, { x: 0, z: DIM.front + 1.3, yaw: shortest(rig.yaw, 0), pitch: -0.04, duration: Math.min(4, 1 + Math.hypot(rig.x, rig.z - DIM.front) * 0.35), ease: "power2.inOut", data: "walk" }); g.eventCallback("onComplete", () => tl.resume()); });
+      // walk round the lamp posts and planters instead of through them
+      tl.call(() => { tl.pause(); walkTo(0, DIM.front + 1.3, 0, 1.5, DIM.front - 3, () => tl.resume()); });
       tl.call(() => { setDoors(true); });
       tl.to({}, { duration: 0.9 });
       tl.call(() => { tl.pause(); const g = gsap.to(rig, { z: DIM.front - 1.4, duration: 2.2, ease: "power2.inOut", data: "walk" }); g.eventCallback("onComplete", () => tl.resume()); });
@@ -410,7 +427,7 @@ async function boot() {
       const s = TOUR[i];
       if (s === "desk") {
         tl.call(() => { tl.pause(); walkTo(0, DIM.deskZ + 1.75, 0, 1.15, DIM.deskZ, () => tl.resume()); });
-        tl.call(() => { deskArmed = false; openSlip(true); });
+        tl.call(() => { deskArmed = false; if (!slipOpen) openSlip(true, true); });
         continue;
       }
       s.forEach((id, k) => {
@@ -542,6 +559,8 @@ async function boot() {
   ui.slipClose.addEventListener("click", closeSlip);
   ui.slipAgain.addEventListener("click", () => { closeSlip(); });
   let slipOpen = false;
+  // the list is rebuilt on every change: put focus back on the same button (or Close if the row went)
+  function refocus(id, k) { const li = ui.slipList.querySelector(`li[data-id="${id}"]`); const b = li && li.querySelectorAll("button")[k]; (b || ui.slipClose).focus({ preventScroll: true }); }
   function renderSlip() {
     const t = totals();
     ui.slipEmpty.hidden = t.n > 0;
@@ -549,15 +568,15 @@ async function boot() {
     ui.slipList.innerHTML = "";
     for (const i of basket) {
       const p = BY_ID[i.id];
-      const li = document.createElement("li");
+      const li = document.createElement("li"); li.dataset.id = i.id;
       li.innerHTML = `<span class="st-slip__q"></span><span class="st-slip__n"><span></span><small></small></span><span class="st-slip__v"></span><span class="st-slip__ctl"><button type="button" aria-label="Remove one">−</button><button type="button" aria-label="Add one">+</button></span>`;
       li.querySelector(".st-slip__q").textContent = i.q + "×";
       li.querySelector(".st-slip__n span").textContent = p.name;
       li.querySelector(".st-slip__n small").textContent = p.size;
       li.querySelector(".st-slip__v").textContent = fmt(p.price * i.q);
       const [minus, plus] = li.querySelectorAll("button");
-      minus.addEventListener("click", () => removeOne(i.id));
-      plus.addEventListener("click", () => { addToBasket(i.id); renderSlip(); });
+      minus.addEventListener("click", () => { removeOne(i.id); refocus(i.id, 0); });
+      plus.addEventListener("click", () => { addToBasket(i.id); renderSlip(); refocus(i.id, 1); });
       ui.slipList.appendChild(li);
     }
     ui.slipCount.textContent = `${t.n} item${t.n === 1 ? "" : "s"}`;
@@ -567,7 +586,10 @@ async function boot() {
     const d = new Date();
     ui.slipDate.textContent = d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) + " · " + d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
   }
-  function openSlip(fromDesk) {
+  let slipOpener = null;
+  function openSlip(fromDesk, fromTour) {
+    if (!fromTour && mode === "tour") stopTour();
+    slipOpener = document.activeElement !== document.body ? document.activeElement : null;
     userMoved = true; endJoy(); for (const k in keys) keys[k] = false; ui.hud.inert = true;
     ui.slip.classList.remove("is-sent");
     ui.slipDone.hidden = true; ui.slipHead.hidden = false;
@@ -579,6 +601,7 @@ async function boot() {
   }
   function closeSlip() {
     ui.hud.inert = false;
+    if (slipOpener && slipOpener.isConnected && !slipOpener.closest("[inert]")) slipOpener.focus({ preventScroll: true }); slipOpener = null;
     ui.slip.classList.remove("is-on");
     slipOpen = false;
     setTimeout(() => { if (!slipOpen) ui.slip.hidden = true; }, 340);
@@ -654,6 +677,8 @@ async function boot() {
   const look = { vx: 0, vy: 0, lx: 0, ly: 0, lt: 0 };
   ui.canvas.addEventListener("pointerdown", (e) => {
     if (mode === "intro" || mode === "entering") return;
+    if (slipOpen) { closeSlip(); return; } // a tap beside the receipt puts it away
+    if (!ui.list.hidden) return;
     if (drag) return; // a second finger doesn't take over the look
     look.vx = look.vy = 0;
     drag = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: 0, yaw: rig.yaw, pitch: rig.pitch };
@@ -661,7 +686,7 @@ async function boot() {
     ui.canvas.setPointerCapture(e.pointerId);
   });
   ui.canvas.addEventListener("pointermove", (e) => {
-    mouse.x = (e.clientX / innerWidth) * 2 - 1; mouse.y = -(e.clientY / innerHeight) * 2 + 1; mouse.moved = true; mouse.cx = e.clientX; mouse.cy = e.clientY;
+    mouse.x = (e.clientX / innerWidth) * 2 - 1; mouse.y = -(e.clientY / innerHeight) * 2 + 1; mouse.moved = true; hoverDirty = true; mouse.cx = e.clientX; mouse.cy = e.clientY;
     if (!drag || drag.id !== e.pointerId) return;
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
     drag.moved = Math.max(drag.moved, Math.hypot(dx, dy));
@@ -692,6 +717,7 @@ async function boot() {
   ui.canvas.addEventListener("pointerleave", () => { mouse.moved = false; hoverId = null; ui.tip.classList.remove("is-on"); });
   ui.canvas.addEventListener("wheel", (e) => {
     if (mode !== "free" && mode !== "tour") return;
+    if (slipOpen || !ui.list.hidden) return;
     e.preventDefault();
     if (mode === "tour") stopTour();
     userMoved = true;
@@ -747,7 +773,7 @@ async function boot() {
   // ---------------- movement + collisions ----------------
   const R = 0.3;
   function blocked(x, z) {
-    const inDoor = Math.abs(x) < 1.05 && z > DIM.front - 0.6 && z < DIM.front + 0.9;
+    const inDoor = Math.abs(x) < 0.62 && z > DIM.front - 0.6 && z < DIM.front + 0.9;
     if (inDoor) return false;
     const b = z > DIM.front ? W.outside : W.bounds;
     if (x < b.x0 || x > b.x1 || z < b.z0 || z > b.z1) return true;
@@ -807,20 +833,20 @@ async function boot() {
     let best = null, bestScore = Infinity;
     const live = (mode === "free" || mode === "tour") && !slipOpen;
     occTick++;
-    for (const it of W.products) {
-      const el = dots[it.p.id];
+    for (let i = 0; i < W.products.length; i++) {
+      const it = W.products[i], el = dots[it.p.id];
       const hw = it.hotWorld;
       const dist = camW.distanceTo(hw);
       let vis = live && dist < 8.5;
       if (vis && it.normal) vis = tmp.copy(camW).sub(hw).dot(it.normal) > 0.2 * dist;
       let sx = 0, sy = 0;
       if (vis) { tmp.copy(hw).project(camera); vis = tmp.z < 1 && Math.abs(tmp.x) < 1.05 && Math.abs(tmp.y) < 1.05; sx = tmp.x; sy = tmp.y; }
-      if (vis) { if ((occTick + it.p.id.length) % 6 === 0 || occCache[it.p.id] === undefined) occCache[it.p.id] = occluded(hw, dist); vis = !occCache[it.p.id]; }
+      if (vis) { if ((occTick + i) % 6 === 0 || occCache[it.p.id] === undefined) occCache[it.p.id] = occluded(hw, dist); vis = !occCache[it.p.id]; }
       if (!vis) { if (el.dataset.v !== "0") { el.dataset.v = "0"; el.classList.remove("is-on"); el.tabIndex = -1; } continue; }
       const px = (sx * 0.5 + 0.5) * innerWidth, py = (-sy * 0.5 + 0.5) * innerHeight;
-      el.style.transform = `translate3d(${px.toFixed(1)}px, ${py.toFixed(1)}px, 0)`;
+      const tr = `translate3d(${px.toFixed(1)}px, ${py.toFixed(1)}px, 0)`; if (el._t !== tr) { el.style.transform = tr; el._t = tr; }
       if (el.dataset.v !== "1") { el.dataset.v = "1"; el.classList.add("is-on"); el.tabIndex = 0; }
-      el.classList.toggle("is-focus", it.p.id === barId);
+      const fo = it.p.id === barId; if (el._f !== fo) { el._f = fo; el.classList.toggle("is-focus", fo); }
       const score = Math.hypot(sx, sy * 1.3) + dist * 0.05;
       if (dist < 4.5 && score < bestScore) { bestScore = score; best = it.p.id; }
     }
@@ -829,11 +855,16 @@ async function boot() {
     if (want && pinnedId && !hoverId) { const it = prodState[pinnedId]; if (Math.hypot(it.hotWorld.x - rig.x, it.hotWorld.z - rig.z) > 6) { pinnedId = null; want = best; } }
     setBar(want);
   }
+  let hoverDirty = true, lastCur = "";
+  const lastCamM = new THREE.Matrix4();
   function updateHover() {
+    if (!camera.matrixWorld.equals(lastCamM)) { lastCamM.copy(camera.matrixWorld); hoverDirty = true; }
+    if (!hoverDirty) return;
+    hoverDirty = false;
     if (COARSE || !mouse.moved || drag || (mode !== "free" && mode !== "tour")) return;
     const id = hitAt(mouse.x, mouse.y);
     if (id !== hoverId && !ui.dots.matches(":hover")) hoverId = id;
-    ui.canvas.style.cursor = id ? "pointer" : "";
+    const cur = id ? "pointer" : ""; if (cur !== lastCur) { ui.canvas.style.cursor = cur; lastCur = cur; }
     if (id) { ui.tip.textContent = `${BY_ID[id].name} · ${fmt(BY_ID[id].price)}`; ui.tip.style.transform = `translate3d(${mouse.cx + 16}px, ${mouse.cy + 18}px, 0)`; ui.tip.classList.add("is-on"); }
     else ui.tip.classList.remove("is-on");
   }
@@ -842,12 +873,12 @@ async function boot() {
   const clock = new THREE.Clock();
   let frame = 0, fpsAcc = 0, fpsN = 0, bobT = 0, puffT = 3;
   const RES = [1, 0.85, 0.72, 0.6]; let resLevel = 0, slowRuns = 0;
-  function applyRes() { const pr = DPR * RES[resLevel]; renderer.setPixelRatio(pr); composer.setPixelRatio(pr); composer.setSize(innerWidth, innerHeight); }
+  function applyRes() { const pr = DPR * RES[resLevel]; renderer.setPixelRatio(pr); composer.setPixelRatio(pr); composer.setSize(innerWidth, innerHeight); if (W.reflector) W.reflector.getRenderTarget().setSize(Math.round(innerWidth * 0.5 * pr), Math.round(innerHeight * 0.5 * pr)); }
   function loop() {
     const dt = Math.min(0.05, clock.getDelta());
     const t = clock.elapsedTime;
     frame++; W.frameId = frame;
-    if (mode === "intro" && !REDUCED) { rig.yaw += Math.sin(t * 0.25) * 0.0002; rig.x += Math.sin(t * 0.2) * 0.001; }
+    if (mode === "intro" && !REDUCED) { rig.yaw += Math.sin(t * 0.25) * 0.012 * dt; rig.x += Math.sin(t * 0.2) * 0.06 * dt; }
     let sp = 0;
     if (mode === "free") sp = move(dt);
     if (!REDUCED) { bobT += dt * (sp > 0.2 ? sp * 2.4 : 0); rig.bob = Math.sin(bobT * 2) * 0.01 * Math.min(1, sp / 2); cart.group.rotation.z = Math.sin(bobT) * 0.02 * Math.min(1, sp / 2); cart.group.rotation.x = Math.sin(t * 0.9) * 0.008; }
@@ -857,7 +888,7 @@ async function boot() {
       if (Math.abs(look.vx) < 1e-5 && Math.abs(look.vy) < 1e-5) look.vx = look.vy = 0;
     }
     applyRig();
-    { const k = THREE.MathUtils.clamp((rig.z - DIM.front) / 3, 0, 1); hemi.intensity = 0.32 - 0.28 * k; renderer.toneMappingExposure = 1.22 - 0.22 * k; W.outdoors = rig.z > DIM.front + 1.2; }
+    { const k = THREE.MathUtils.clamp((rig.z - DIM.front) / 3, 0, 1); hemi.intensity = 0.25 - 0.21 * k; renderer.toneMappingExposure = 1.14 - 0.14 * k; W.outdoors = rig.z > DIM.front + 1.2; }
     // the tester atomiser puffs now and then
     puffT -= dt;
     for (const e of W.emitters) if (e.puff) { if (puffT < 0) { e.rate = 3.5; puffT = 5 + Math.random() * 3; } e.rate = Math.max(0, e.rate - dt * 5); }
@@ -873,12 +904,13 @@ async function boot() {
     if (!document.hidden && dt > 0 && dt < 0.25) { fpsAcc += dt; fpsN++; }
     if (fpsN >= 60) {
       const ms = (fpsAcc / fpsN) * 1000; fpsAcc = 0; fpsN = 0;
-      if (ms > 24 && resLevel < RES.length - 1) { resLevel++; applyRes(); slowRuns = 0; }
-      else if (ms > 24 && gtao && gtao.enabled) { gtao.enabled = false; }
+      if (ms > 24 && gtao && gtao.enabled) { gtao.enabled = false; }
+      else if (ms > 24 && resLevel < RES.length - 1) { resLevel++; applyRes(); slowRuns = 0; }
       else if (ms < 13 && resLevel > 0) { if (++slowRuns > 4) { resLevel--; applyRes(); slowRuns = 0; } }
     }
   }
-  renderer.setAnimationLoop(loop);
+  started = true;
+  renderer.setAnimationLoop(ui.list.hidden ? loop : null);
   document.addEventListener("visibilitychange", () => { renderer.setAnimationLoop(document.hidden || !ui.list.hidden ? null : loop); clock.getDelta(); });
   let rz = 0, lastW = innerWidth;
   function onResize() {
@@ -886,13 +918,11 @@ async function boot() {
     if (document.activeElement === ui.slipName && innerWidth === lastW) return;
     lastW = innerWidth;
     renderer.setSize(innerWidth, innerHeight, false); composer.setSize(innerWidth, innerHeight); lens.uniforms.uRes.value.set(innerWidth, innerHeight); fov();
-    if (W.reflector) W.reflector.getRenderTarget().setSize(Math.round(innerWidth * 0.5 * Math.min(devicePixelRatio, 1.5)), Math.round(innerHeight * 0.5 * Math.min(devicePixelRatio, 1.5)));
+    if (W.reflector) W.reflector.getRenderTarget().setSize(Math.round(innerWidth * 0.5 * DPR * RES[resLevel]), Math.round(innerHeight * 0.5 * DPR * RES[resLevel]));
   }
   addEventListener("resize", () => { cancelAnimationFrame(rz); rz = requestAnimationFrame(onResize); });
   addEventListener("orientationchange", () => setTimeout(onResize, 250));
 
-  listHooks.add = (id) => addToBasket(id);
-  listHooks.pause = (on) => renderer.setAnimationLoop(on ? null : loop);
   window.__st = { loop, rig, startTour, stopTour, enter, addToBasket, openSlip, openDoors, get mode() { return mode; }, set mode(v) { mode = v; }, setBar, composer, renderer, W, scene, camera, cart };
 }
 
@@ -962,12 +992,17 @@ function buildBasket() {
 
   const slots = [];
   for (const r of [0, 1]) for (const c of [1, 2, 0, 3]) slots.push(new THREE.Vector3(-0.135 + c * 0.09, 0.008, -0.055 + r * 0.11));
-  const items = {}, pend = {}; let used = 0;
+  const items = {}, pend = {}, itemCache = {}; let used = 0;
   const box = new THREE.Box3(), sz = new THREE.Vector3();
   return {
     group,
+    // one basket copy per product, reused: adding and removing again never builds (and leaks) new geometry
     makeItem(p) {
-      const c = buildProduct(p).root;
+      if (itemCache[p.id]) { const h = itemCache[p.id]; h.position.set(0, 0, 0); h.rotation.set(0, 0, 0); h.scale.setScalar(1); return h; }
+      return (itemCache[p.id] = this.buildItem(p));
+    },
+    buildItem(p) {
+      const was = GLASS.cheap; GLASS.cheap = true; const c = buildProduct(p).root; GLASS.cheap = was;
       c.traverse(o => { if (o.isMesh) o.castShadow = false; });
       c.updateMatrixWorld(true);
       box.setFromObject(c); box.getSize(sz);
@@ -999,6 +1034,7 @@ function buildBasket() {
 function makeAir(N) {
   const pos = new Float32Array(N * 3), alpha = new Float32Array(N), size = new Float32Array(N);
   const vel = new Float32Array(N * 3), life = new Float32Array(N), age = new Float32Array(N);
+  let idle = false;
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
   g.setAttribute("aAlpha", new THREE.BufferAttribute(alpha, 1).setUsage(THREE.DynamicDrawUsage));
@@ -1028,15 +1064,20 @@ function makeAir(N) {
           life[i] = 1.8 + Math.random() * 1.4; age[i] = 0; size[i] = 0.03 + Math.random() * 0.03;
         }
       }
+      const drag = Math.pow(0.96, dt * 60); let alive = 0;
       for (let i = 0; i < N; i++) {
         if (age[i] >= life[i]) { alpha[i] = 0; continue; }
+        alive++;
         age[i] += dt;
         const k = i * 3;
-        vel[k] *= 0.96; vel[k + 1] = vel[k + 1] * 0.96 - 0.01 * dt; vel[k + 2] *= 0.96;
+        vel[k] *= drag; vel[k + 1] = vel[k + 1] * drag - 0.01 * dt; vel[k + 2] *= drag;
         pos[k] += vel[k] * dt; pos[k + 1] += vel[k + 1] * dt; pos[k + 2] += vel[k + 2] * dt;
         size[i] += dt * 0.09;
         alpha[i] = Math.sin(Math.PI * age[i] / life[i]) * 0.16;
       }
+      // nothing in the air: skip the upload (one last clearing upload after the final puff fades)
+      if (!alive && idle) return;
+      idle = !alive;
       g.attributes.position.needsUpdate = true; g.attributes.aAlpha.needsUpdate = true; g.attributes.aSize.needsUpdate = true;
     }
   };
@@ -1057,6 +1098,7 @@ function makeMotes(N) {
     fragmentShader: `varying float vA; void main(){ float d=length(gl_PointCoord-.5); float a=smoothstep(.5,.1,d); gl_FragColor=vec4(1.,.92,.8,a*vA*.35); }`
   });
   const pts = new THREE.Points(g, mat); pts.frustumCulled = false; pts.renderOrder = 6;
+  addEventListener("resize", () => { mat.uniforms.uScale.value = innerHeight; });
   return { points: pts, update(dt, t) { mat.uniforms.uT.value = t; } };
 }
 

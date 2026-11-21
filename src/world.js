@@ -17,10 +17,10 @@ export function buildWorld(scene, { extEnv, models, quality }) {
 
   // ======================= materials =======================
   const marble = pbrSet("stone_light", 1, 1);
-  const floorMat = new THREE.MeshPhysicalMaterial({ map: marble.map, normalMap: marble.normalMap, normalScale: new THREE.Vector2(0.3, 0.3), roughnessMap: marble.roughnessMap, roughness: 0.5, clearcoat: 0.7, clearcoatRoughness: 0.1, color: 0xffffff });
+  const floorMat = new THREE.MeshPhysicalMaterial({ map: marble.map, normalMap: marble.normalMap, normalScale: new THREE.Vector2(0.3, 0.3), roughnessMap: marble.roughnessMap, roughness: 0.42, clearcoat: 0.7, clearcoatRoughness: 0.1, color: 0xf6eee6 });
   const plaster = pbrSet("plaster_blush", 2.2, 1.4);
   const wallMat = new THREE.MeshStandardMaterial({ map: plaster.map, normalMap: plaster.normalMap, normalScale: new THREE.Vector2(0.12, 0.12), roughness: 0.88, color: 0xfff8f4 });
-  const ceilMat = new THREE.MeshStandardMaterial({ color: 0xf4eeea, roughness: 0.95, emissive: 0xfff1e6, emissiveIntensity: 0.1 });
+  const ceilMat = new THREE.MeshStandardMaterial({ color: 0xf4eeea, roughness: 0.95, emissive: 0xfff1e6, emissiveIntensity: 0.04 });
   const walnut = pbrSet("american_walnut_veneer", 1.5, 1.5);
   const walnutMat = new THREE.MeshPhysicalMaterial({ map: walnut.map, normalMap: walnut.normalMap, normalScale: new THREE.Vector2(0.4, 0.4), roughness: 0.42, clearcoat: 0.5, clearcoatRoughness: 0.25, color: 0xc99d78 });
   const walnutV = pbrSet("american_walnut_veneer", 1, 2, { rot: Math.PI / 2 });
@@ -36,9 +36,9 @@ export function buildWorld(scene, { extEnv, models, quality }) {
     x.fillText("\u20B9" + p.price.toLocaleString("en-IN"), 12, 40); x.font = `500 13px ${FONT_B}`; x.fillStyle = "#7a5a60"; x.textAlign = "right"; x.fillText(p.size || "", w - 12, 39);
   }) }));
   const fcache = {};
-  const fluted = (mat, rx) => { const k = mat.uuid + rx; if (fcache[k]) return fcache[k]; const m = mat.clone(); m.normalMap = flute.clone(); m.normalMap.wrapS = m.normalMap.wrapT = THREE.RepeatWrapping; m.normalMap.repeat.set(rx, 1); m.normalMap.anisotropy = 8; m.normalMap.minFilter = THREE.LinearMipmapLinearFilter; m.normalMap.generateMipmaps = true; m.normalScale = new THREE.Vector2(0.9, 0.9); m.normalMap.needsUpdate = true; return (fcache[k] = m); };
-  const plumFluted = new THREE.MeshPhysicalMaterial({ color: 0x6a3445, roughness: 0.38, clearcoat: 0.8, clearcoatRoughness: 0.15, normalMap: flute, normalScale: new THREE.Vector2(1.4, 1.4) });
-  const blushFluted = new THREE.MeshPhysicalMaterial({ color: 0xe3c1b5, roughness: 0.4, clearcoat: 0.7, clearcoatRoughness: 0.15, normalMap: flute, normalScale: new THREE.Vector2(1.4, 1.4) });
+  const fluted = (mat, rx) => { const k = mat.uuid + rx; if (fcache[k]) return fcache[k]; const m = mat.clone(); m.normalMap = flute.clone(); m.normalMap.wrapS = m.normalMap.wrapT = THREE.RepeatWrapping; m.normalMap.repeat.set(rx, 1); m.normalMap.anisotropy = 8; m.normalMap.minFilter = THREE.LinearMipmapLinearFilter; m.normalMap.generateMipmaps = true; m.normalScale = new THREE.Vector2(0.5, 0.5); m.normalMap.needsUpdate = true; return (fcache[k] = m); };
+  const plumFluted = new THREE.MeshPhysicalMaterial({ color: 0x62303c, roughness: 0.5, clearcoat: 0.55, clearcoatRoughness: 0.2, normalMap: flute, normalScale: new THREE.Vector2(0.8, 0.8) });
+  const blushFluted = new THREE.MeshPhysicalMaterial({ color: 0xe3c1b5, roughness: 0.45, clearcoat: 0.55, clearcoatRoughness: 0.2, normalMap: flute, normalScale: new THREE.Vector2(0.8, 0.8) });
   const brassFluted = new THREE.MeshStandardMaterial({ color: 0xc69b62, metalness: 1, roughness: 0.32, normalMap: flute, normalScale: new THREE.Vector2(1.6, 1.6) });
   const velvet = pbrSet("velour_velvet", 2, 2);
   const velvetMat = new THREE.MeshPhysicalMaterial({ map: velvet.map, normalMap: velvet.normalMap, color: 0xd9a6a6, roughness: 0.9, sheen: 1, sheenRoughness: 0.5, sheenColor: new THREE.Color(0xffd9d2) });
@@ -54,7 +54,7 @@ export function buildWorld(scene, { extEnv, models, quality }) {
     floor.material = reflectiveFloor(floorMat, tex, tm);
     // render the reflection once per frame (the transmission pass would trigger it again)
     const orig = floor.onBeforeRender; let last = -1;
-    floor.onBeforeRender = function (r, s, c) { const f = W.frameId; if (c !== W.mainCamera || f === last || W.outdoors) return; last = f; orig.call(this, r, s, c); };
+    floor.onBeforeRender = function (r, s, c) { const f = W.frameId; if (c !== W.mainCamera || f === last || W.outdoors) return; last = f; const nr = W.noReflect || []; for (const o of nr) o.visible = false; orig.call(this, r, s, c); for (const o of nr) o.visible = true; };
     W.reflector = floor;
   } else floor = new THREE.Mesh(new THREE.PlaneGeometry(fw, fd), floorMat);
   floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0, (DIM.front + DIM.back) / 2); floor.receiveShadow = true;
@@ -99,7 +99,7 @@ export function buildWorld(scene, { extEnv, models, quality }) {
     const g = new THREE.Group(); g.position.set(s * DIM.x, 0, 0); g.rotation.y = -s * Math.PI / 2; IN.add(g);
     const glow = side === "L" ? gradientTex("#f3d9cd", "#ecc9bb", "#d9ab9b") : gradientTex("#efcfcf", "#e2b4b6", "#c98f95");
     // backlit plaster: it takes light and shadow like a wall, with a soft glow from the hidden LED behind the arch
-    const glowMat = new THREE.MeshStandardMaterial({ map: glow, roughness: 0.92, emissive: 0xffffff, emissiveMap: glow, emissiveIntensity: side === "L" ? 0.42 : 0.38 });
+    const glowMat = new THREE.MeshStandardMaterial({ map: glow, roughness: 0.92, emissive: 0xffffff, emissiveMap: glow, emissiveIntensity: side === "L" ? 0.26 : 0.24 });
     const pil = side === "L" ? walnutVMat : fluted(plumFluted, 7);
     const zs = DIM.bayZ;
     // pilasters between and around bays
@@ -370,10 +370,10 @@ export function buildWorld(scene, { extEnv, models, quality }) {
     const discs = mergeGeometries([-0.7, 0.7].map(x => new THREE.CircleGeometry(0.4, 64).translate(x, 0, 0)));
     let pair;
     if (HI) {
-      pair = new Reflector(discs, { textureWidth: 1024, textureHeight: 512, color: 0xdcd8d3, clipBias: 0.003 });
+      pair = new Reflector(discs, { textureWidth: 768, textureHeight: 384, color: 0xdcd8d3, clipBias: 0.003 });
       const orig = pair.onBeforeRender; let last = -1;
-      const pw = new THREE.Vector3();
-      pair.onBeforeRender = function (r, s, c) { if (c !== W.mainCamera || W.frameId === last || W.outdoors) return; this.getWorldPosition(pw); if (pw.distanceToSquared(c.getWorldPosition(new THREE.Vector3())) > 64) return; last = W.frameId; orig.call(this, r, s, c); };
+      const pw = new THREE.Vector3(), cw = new THREE.Vector3();
+      pair.onBeforeRender = function (r, s, c) { if (c !== W.mainCamera || W.frameId === last || W.outdoors) return; this.getWorldPosition(pw); if (pw.distanceToSquared(c.getWorldPosition(cw)) > 64) return; last = W.frameId; orig.call(this, r, s, c); };
     } else pair = new THREE.Mesh(discs, M.mirror);
     pair.position.set(0, 1.55, 0.052); g.add(pair);
     for (const x of [-0.7, 0.7]) {
@@ -426,12 +426,14 @@ export function buildWorld(scene, { extEnv, models, quality }) {
     const spots = [];
     for (let r = 0; r < deep; r++) for (let i = 0; i < n; i++) spots.push(new THREE.Vector3((i - (n - 1) / 2) * stepX, 0, -r * stepZ + (deep - 1) * stepZ / 2));
     proto.root.updateMatrixWorld(true);
-    const inv = proto.root.matrixWorld.clone().invert(), T = new THREE.Matrix4(), L = new THREE.Matrix4();
+    const inv = proto.root.matrixWorld.clone().invert(), T = new THREE.Matrix4(), L = new THREE.Matrix4(), R = new THREE.Matrix4();
+    // a hand-stocked shelf is never a perfect grid: a few mm and a degree or two per copy
+    const jit = spots.map(() => ({ x: (rnd() - 0.5) * Math.min(0.008, stepX * 0.08), z: (rnd() - 0.5) * 0.012, a: (rnd() - 0.5) * 0.07 }));
     proto.root.traverse(o => {
       if (!o.isMesh) return;
       L.multiplyMatrices(inv, o.matrixWorld);
       const im = new THREE.InstancedMesh(o.geometry, o.material, spots.length);
-      spots.forEach((v, k) => im.setMatrixAt(k, T.makeTranslation(v.x, v.y, v.z).multiply(L)));
+      spots.forEach((v, k) => { const j = jit[k]; im.setMatrixAt(k, T.makeTranslation(v.x + j.x, v.y, v.z + j.z).multiply(R.makeRotationY(j.a)).multiply(L)); });
       im.computeBoundingSphere(); im.computeBoundingBox();
       im.castShadow = o.castShadow && proto.h > 0.08; im.receiveShadow = true; im.renderOrder = o.renderOrder;
       holder.add(im);

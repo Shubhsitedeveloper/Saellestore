@@ -88,9 +88,13 @@ function woodCap() {
   return (M.woodCap = new THREE.MeshPhysicalMaterial({ map: s.map, normalMap: s.normalMap, roughness: 0.35, clearcoat: 0.6, color: 0xd9b48c }));
 }
 
+// cheap = no transmission pass (phones, and the little copies in the basket)
+export const GLASS = { cheap: false };
+
 // Glass that holds liquid. The tinted part of the bottle IS the liquid (attenuation),
 // so the refraction shows what's behind it through both glass and perfume.
 export function liquidGlass(liquidHex, { thickness = 0.04, frost = 0, dist = 0.05, ior = 1.48 } = {}) {
+  if (GLASS.cheap) return new THREE.MeshPhysicalMaterial({ color: new THREE.Color(liquidHex).lerp(new THREE.Color(1, 1, 1), 0.35), roughness: 0.05 + frost, clearcoat: 0.6, clearcoatRoughness: 0.05, transparent: true, opacity: 0.55, depthWrite: false, envMapIntensity: 1.4 });
   return new THREE.MeshPhysicalMaterial({
     color: 0xffffff, metalness: 0, roughness: 0.02 + frost, transmission: 1, thickness, ior,
     attenuationColor: new THREE.Color(liquidHex), attenuationDistance: dist,
@@ -98,6 +102,7 @@ export function liquidGlass(liquidHex, { thickness = 0.04, frost = 0, dist = 0.0
   });
 }
 export function clearGlass(tintHex = "#ffffff", { thickness = 0.01, frost = 0, dist = 0.4 } = {}) {
+  if (GLASS.cheap) return new THREE.MeshPhysicalMaterial({ color: new THREE.Color(tintHex).lerp(new THREE.Color(1, 1, 1), 0.35), roughness: 0.05 + frost, clearcoat: 0.6, clearcoatRoughness: 0.05, transparent: true, opacity: 0.55, depthWrite: false, envMapIntensity: 1.4 });
   return new THREE.MeshPhysicalMaterial({
     color: 0xffffff, roughness: 0.015 + frost, transmission: 1, thickness, ior: 1.5,
     attenuationColor: new THREE.Color(tintHex), attenuationDistance: dist, envMapIntensity: 1.3, specularIntensity: 1
