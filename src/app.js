@@ -38,10 +38,17 @@ const ui = {
 // ---------------- basket state ----------------
 const KEY = "saelle-basket";
 let basket = [];
-try { basket = JSON.parse(localStorage.getItem(KEY) || "[]").filter(i => BY_ID[i.id]); } catch (e) { basket = []; }
+try {
+  // merge duplicates and keep whole quantities 1..99, whatever an older version saved
+  const raw = JSON.parse(localStorage.getItem(KEY) || "[]"), m = new Map();
+  if (Array.isArray(raw)) for (const i of raw) { if (!i || !Object.hasOwn(BY_ID, i.id)) continue; const q = Math.floor(Number(i.q)); if (!(q > 0)) continue; m.set(i.id, Math.min(99, (m.get(i.id) || 0) + q)); }
+  basket = [...m].map(([id, q]) => ({ id, q }));
+} catch (e) { basket = []; }
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(basket)); } catch (e) {} };
 const qtyOf = id => (basket.find(i => i.id === id) || {}).q || 0;
 const totals = () => ({ n: basket.reduce((a, i) => a + i.q, 0), sum: basket.reduce((a, i) => a + BY_ID[i.id].price * i.q, 0) });
+
+const listHooks = {};
 
 // ---------------- WebGL check ----------------
 let renderer = null;
@@ -50,7 +57,7 @@ if (!renderer) { ui.nogl.hidden = false; ui.intro.hidden = true; buildList(); sy
 else boot().catch(err => { console.error(err); ui.load.textContent = "The 3D store could not open. Try the list view."; });
 
 async function boot() {
-  const DPR = Math.min(devicePixelRatio || 1, LOW ? 1.25 : 1.75);
+  const DPR = Math.min(devicePixelRatio || 1, LOW ? 1.25 : 1.5);
   renderer.setPixelRatio(DPR);
   renderer.setSize(innerWidth, innerHeight, false);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -76,7 +83,7 @@ async function boot() {
 
   let loaded = 0; const total = 11;
   const tick = () => { loaded++; ui.loadBar.style.transform = `scaleX(${Math.min(1, loaded / total)})`; };
-  const hdrP = fetch("assets/hdri/night_square.txt").then(r => r.text()).then(s => { const b = Uint8Array.from(atob(s.trim()), c => c.charCodeAt(0)); const L = new RGBELoader(); const d = L.parse(b.buffer); const t = new THREE.DataTexture(d.data, d.width, d.height, THREE.RGBAFormat, d.type); t.colorSpace = THREE.LinearSRGBColorSpace; t.minFilter = t.magFilter = THREE.LinearFilter; t.generateMipmaps = false; t.flipY = true; t.needsUpdate = true; return t; }).then(t => { tick(); return t; });
+  const hdrP = fetch("assets/hdri/night_square.txt").then(r => { if (!r.ok) throw new Error("hdr " + r.status); return r.text(); }).then(s => { const b = Uint8Array.from(atob(s.trim()), c => c.charCodeAt(0)); const L = new RGBELoader(); const d = L.parse(b.buffer); const t = new THREE.DataTexture(d.data, d.width, d.height, THREE.RGBAFormat, d.type); t.colorSpace = THREE.LinearSRGBColorSpace; t.minFilter = t.magFilter = THREE.LinearFilter; t.generateMipmaps = false; t.flipY = true; t.needsUpdate = true; return t; }).then(t => { tick(); return t; }, e => { console.warn("sky", e); tick(); return null; });
   const gl = new GLTFLoader();
   const g = (n) => gl.loadAsync(`assets/models/${n}/main.json`).then(r => { tick(); return r.scene; }).catch(e => { console.warn("model", n, e); tick(); return null; });
   const [hdr, tree, plant4, vase1, vase3, brass, stool, ottoman, side, lamp] = await Promise.all([
@@ -84,9 +91,9 @@ async function boot() {
   ]);
   await fontWait; tick();
 
-  hdr.mapping = THREE.EquirectangularReflectionMapping;
-  const extEnv = pmrem.fromEquirectangular(hdr).texture;
-  scene.background = hdr;
+  let extEnv = roomEnv;
+  if (hdr) { hdr.mapping = THREE.EquirectangularReflectionMapping; extEnv = pmrem.fromEquirectangular(hdr).texture; scene.background = hdr; }
+  else scene.background = new THREE.Color(0x0d0b12);
   scene.backgroundIntensity = 0.42;
   scene.backgroundRotation = new THREE.Euler(0, Math.PI * 0.62, 0);
 
@@ -113,11 +120,9 @@ async function boot() {
     const w = new THREE.SpotLight(0xffe2c4, 34, 9, 0.85, 0.9, 1.3);
     w.position.set(s * 3.4, 3.9, z); w.target.position.set(s * 7, 1.4, z); scene.add(w, w.target);
   }
-  const pend = new THREE.PointLight(0xffd9b0, 4, 6, 1.6); pend.position.set(0, 2.2, DIM.scentZ); scene.add(pend);
   const desk = new THREE.SpotLight(0xffe2c4, 22, 8, 0.8, 0.9, 1.4); desk.position.set(0, 3.9, DIM.deskZ + 0.6); desk.target.position.set(0, 0.8, DIM.deskZ - 0.6); scene.add(desk, desk.target);
-  const vanity = new THREE.PointLight(0xffe0c0, 2.5, 5, 1.6); vanity.position.set(4.9, 2.4, DIM.back + 1.6); scene.add(vanity);
   // facade washers grazing the stone
-  for (const x of [-9.7, -2.0, 2.0, 9.7]) { const u = new THREE.SpotLight(0xffcf98, 70, 7, 0.26, 0.75, 1.5); u.position.set(x, 0.12, DIM.front + 1.05); u.target.position.set(x, 4.4, DIM.front + 0.62); scene.add(u, u.target); }
+  for (const x of [-9.7, -2.0, 2.0, 9.7]) { const u = new THREE.SpotLight(0xffcf98, 48, 7, 0.36, 1, 1.5); u.position.set(x, 0.12, DIM.front + 1.05); u.target.position.set(x, 4.4, DIM.front + 0.62); scene.add(u, u.target); }
   // outdoors the city light comes from the street HDRI: keep it as reflections, not as a flat fill
   for (const m of W.extMats) m.envMapIntensity = (m.metalness > 0.5 || m.transmission > 0 || m.clearcoat > 0.5) ? 0.8 : m.clearcoat > 0 ? 0.35 : 0.05;
   // the warm spill of the shop through the door and windows onto the pavement
@@ -145,9 +150,9 @@ async function boot() {
   let gtao = null;
   if (!LOW) {
     gtao = new GTAOPass(scene, camera, innerWidth, innerHeight);
-    gtao.updateGtaoMaterial({ radius: 0.3, distanceExponent: 1.5, thickness: 1, scale: 1.0, samples: 12 });
+    gtao.updateGtaoMaterial({ radius: 0.2, distanceExponent: 1.5, thickness: 1, scale: 1.0, samples: 12 });
     gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 5, rings: 2, samples: 12 });
-    gtao.blendIntensity = 0.75;
+    gtao.blendIntensity = 0.9;
     composer.addPass(gtao);
   }
   const bloom = new UnrealBloomPass(size.clone().multiplyScalar(0.5), 0.28, 0.55, 1.0);
@@ -155,19 +160,19 @@ async function boot() {
   composer.addPass(new OutputPass());
   // the camera itself: a touch of lens fringing at the edges, vignette, a soft grade and fine film grain
   const lens = new ShaderPass({
-    uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uRes: { value: new THREE.Vector2(innerWidth, innerHeight) }, uGrain: { value: LOW ? 0.022 : 0.03 } },
+    uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uRes: { value: new THREE.Vector2(innerWidth, innerHeight) }, uGrain: { value: LOW ? 0.018 : 0.028 }, uCA: { value: LOW ? 0.0 : 0.004 } },
     vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-    fragmentShader: `uniform sampler2D tDiffuse; uniform float uTime; uniform vec2 uRes; uniform float uGrain; varying vec2 vUv;
+    fragmentShader: `uniform sampler2D tDiffuse; uniform float uTime; uniform vec2 uRes; uniform float uGrain; uniform float uCA; varying vec2 vUv;
       float h(vec2 p){ p = fract(p * vec2(443.897, 441.423)); p += dot(p, p.yx + 19.19); return fract((p.x + p.y) * p.x); }
       void main(){
         vec2 d = vUv - 0.5; float r2 = dot(d, d);
-        vec2 off = d * r2 * 0.012;
+        vec2 off = d * r2 * uCA;
         vec3 c = vec3(texture2D(tDiffuse, vUv + off).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - off).b);
         float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
         c = mix(c, c * vec3(1.03, 1.0, 0.95), smoothstep(0.35, 0.9, lum));       // warm highlights
         c = mix(c, c + vec3(-0.004, 0.0, 0.012), 1.0 - smoothstep(0.0, 0.25, lum)); // cool, slightly lifted shadows
         c = mix(vec3(lum), c, 1.04);
-        c *= mix(1.0, 0.72, smoothstep(0.12, 0.62, r2 * 1.6));                  // vignette
+        c *= mix(1.0, 0.8, smoothstep(0.12, 0.62, r2 * 1.6));                  // vignette
         float n = h(vUv * uRes + fract(uTime * 13.7) * 100.0) - 0.5;
         c += n * uGrain * (1.0 - lum * 0.6);
         gl_FragColor = vec4(c, 1.0);
@@ -240,13 +245,12 @@ async function boot() {
     const fb = (w, h, d, x, y, z, m) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); b.castShadow = true; b.receiveShadow = true; g.add(b); return b; };
     fb(PW + 0.26, PH + 0.26, 0.02, 0, 0, 0.01, matM);
     for (const [w, h, x, y] of [[PW + 0.3, 0.025, 0, (PH + 0.275) / 2], [PW + 0.3, 0.025, 0, -(PH + 0.275) / 2], [0.025, PH + 0.3, (PW + 0.275) / 2, 0], [0.025, PH + 0.3, -(PW + 0.275) / 2, 0]]) fb(w, h, 0.045, x, y, 0.022, frameM);
-    const print = new THREE.Mesh(new THREE.PlaneGeometry(PW, PH), new THREE.MeshPhysicalMaterial({ map: tex, roughness: 0.35, clearcoat: 0.4, clearcoatRoughness: 0.08, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: LOW ? 0.32 : 0.12 }));
+    const print = new THREE.Mesh(new THREE.PlaneGeometry(PW, PH), new THREE.MeshPhysicalMaterial({ map: tex, roughness: 0.35, clearcoat: 0.4, clearcoatRoughness: 0.08, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.3 }));
     print.position.z = 0.0215; g.add(print);
     // a brass picture light over each print
     const arm = fb(0.02, 0.02, 0.22, 0, PH / 2 + 0.2, 0.11, frameM); void arm;
     const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.5, 20), frameM); bar.rotation.z = Math.PI / 2; bar.position.set(0, PH / 2 + 0.2, 0.22); g.add(bar);
     const glow = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.006, 0.02), new THREE.MeshBasicMaterial({ color: new THREE.Color(2.2, 1.8, 1.4), toneMapped: false })); glow.position.set(0, PH / 2 + 0.177, 0.22); g.add(glow);
-    if (!LOW) { const sp = new THREE.SpotLight(0xffe4c8, 9, 3, 0.75, 0.9, 1.6); sp.position.set(0, PH / 2 + 0.17, 0.25); g.add(sp); sp.target.position.set(0, -0.3, 0); g.add(sp.target); }
   }
 
   // ---------------- hotspot dots ----------------
@@ -274,6 +278,10 @@ async function boot() {
   buildList();
   basket.forEach(i => cart.fill(BY_ID[i.id]));
 
+  // compile every shader now, so turning to a new corner never stalls; the room never moves, so shadows render once
+  try { await Promise.race([renderer.compileAsync(scene, camera), new Promise(r => setTimeout(r, 8000))]); } catch (e) { /* older drivers: compile lazily */ }
+  renderer.shadowMap.autoUpdate = false; renderer.shadowMap.needsUpdate = true;
+
   // ---------------- intro ----------------
   ui.load.hidden = true;
   ui.enter.disabled = false;
@@ -295,8 +303,7 @@ async function boot() {
       .add(() => openDoors(true), "-=1.1")
       .to(rig, { z: 3.4, pitch: -0.12, duration: 2.8, ease: "power2.inOut" })
       .add(() => { cart.group.visible = true; gsap.fromTo(cart.group.position, { y: BASK.y - 0.8 }, { y: BASK.y, duration: 1.2, ease: "power3.out" }); }, "-=1.2")
-      .add(() => showInside(), "-=0.4")
-      .add(() => openDoors(false), "+=0.4");
+      .add(() => showInside());
   }
   function showInside() {
     cart.group.visible = true; if (REDUCED) cart.group.position.y = BASK.y;
@@ -305,10 +312,14 @@ async function boot() {
     if (COARSE) ui.joy.hidden = false;
     mode = "free";
     showHint();
-    setTimeout(() => { if (mode === "free" && !userMoved) startTour(); }, REDUCED ? 600 : 1200);
+    if (!REDUCED) setTimeout(() => { if (mode === "free" && !userMoved && !slipOpen && ui.list.hidden) startTour(); }, 1200);
   }
+  let doorsOpen = false;
+  function setDoors(open) { if (open === doorsOpen) return; doorsOpen = open; openDoors(open); }
   function openDoors(open) {
+    doorsOpen = open;
     for (const d of W.doors) {
+      gsap.killTweensOf(d.obj.rotation);
       if (REDUCED) d.obj.rotation.y = open ? d.open : d.closed;
       else gsap.to(d.obj.rotation, { y: open ? d.open : d.closed, duration: open ? 1.6 : 1.8, ease: open ? "power2.out" : "power2.inOut" });
     }
@@ -337,29 +348,44 @@ async function boot() {
     const pitch = THREE.MathUtils.clamp(Math.atan2(ty - EYE, dist), -0.55, 0.25) + 0.02;
     return gsap.to(rig, { x, z, yaw, pitch, duration: dur ?? Math.min(3.4, 1.2 + Math.hypot(x - rig.x, z - rig.z) * 0.36), ease: "power2.inOut" });
   }
-  // a walk that avoids the tables: go round via the aisle beside them
+  // a walk that goes round anything in the way: test the straight line against every obstacle box
+  function segHits(ax, az, bx, bz, o, pad) {
+    const x0 = o.x0 - pad, x1 = o.x1 + pad, z0 = o.z0 - pad, z1 = o.z1 + pad;
+    let t0 = 0, t1 = 1; const dx = bx - ax, dz = bz - az;
+    for (const [p, q] of [[-dx, ax - x0], [dx, x1 - ax], [-dz, az - z0], [dz, z1 - az]]) {
+      if (p === 0) { if (q < 0) return false; continue; }
+      const r = q / p; if (p < 0) { if (r > t1) return false; if (r > t0) t0 = r; } else { if (r < t0) return false; if (r < t1) t1 = r; }
+    }
+    return t0 < t1;
+  }
   function routeTo(x, z) {
-    const pts = [];
-    const crosses = (z0, z1, zc, half) => (Math.min(z0, z1) < zc + half && Math.max(z0, z1) > zc - half);
-    const zA = rig.z, zB = z;
-    for (const [zc, half] of [[DIM.entryZ, 1.1], [DIM.scentZ, 0.95], [DIM.bodyZ, 0.85]]) {
-      if (crosses(zA, zB, zc, half) && Math.abs(x) < 2.6 && Math.abs(rig.x) < 2.6 && !(Math.abs(zA - zc) < half && Math.abs(zB - zc) < half)) {
-        const sx = (x + rig.x) >= 0 ? 2.75 : -2.75;
-        pts.push({ x: sx, z: zc + (zB > zA ? -0.0 : 0) });
-      }
+    const pts = []; let ax = rig.x, az = rig.z;
+    for (let guard = 0; guard < 4; guard++) {
+      const hit = W.obstacles.filter(o => segHits(ax, az, x, z, o, 0.32)).sort((p, q) => Math.hypot((p.x0 + p.x1) / 2 - ax, (p.z0 + p.z1) / 2 - az) - Math.hypot((q.x0 + q.x1) / 2 - ax, (q.z0 + q.z1) / 2 - az))[0];
+      if (!hit) break;
+      const m = 0.62, cx = (hit.x0 + hit.x1) / 2;
+      // pass on the side with more room, and nearer the line we wanted
+      const left = hit.x0 - m, right = hit.x1 + m;
+      const sx = (left < W.bounds.x0 + 0.1) ? right : (right > W.bounds.x1 - 0.1) ? left : ((ax + x) / 2 < cx ? left : right);
+      const zEdge = (zz) => zz > hit.z1 ? hit.z1 + m : zz < hit.z0 ? hit.z0 - m : zz;
+      const p1 = { x: sx, z: zEdge(az) }, p2 = { x: sx, z: zEdge(z) };
+      if (Math.hypot(p1.x - ax, p1.z - az) > 0.2) pts.push(p1);
+      pts.push(p2); ax = p2.x; az = p2.z;
     }
     return pts;
   }
+  let walkGen = 0;
   function walkTo(x, z, tx, ty, tz, done) {
+    const gen = walkGen;
     const via = routeTo(x, z);
-    const tl = gsap.timeline({ onComplete: done });
+    const tl = gsap.timeline({ data: "walk", onComplete: () => { if (gen === walkGen && done) done(); } });
     let px = rig.x, pz = rig.z;
     for (const v of via) {
-      const yaw = () => lookYaw(px, pz, v.x, v.z);
-      tl.to(rig, { x: v.x, z: v.z, duration: Math.max(0.9, Math.hypot(v.x - px, v.z - pz) * 0.42), ease: "sine.inOut", onStart: () => gsap.to(rig, { yaw: shortest(rig.yaw, yaw()), pitch: -0.08, duration: 0.8, ease: "power2.inOut" }) });
+      const fx = px, fz = pz;
+      tl.to(rig, { x: v.x, z: v.z, duration: Math.max(0.9, Math.hypot(v.x - px, v.z - pz) * 0.42), ease: "sine.inOut", onStart: () => { if (gen === walkGen) gsap.to(rig, { yaw: shortest(rig.yaw, lookYaw(fx, fz, v.x, v.z)), pitch: -0.08, duration: 0.8, ease: "power2.inOut", data: "walk" }); } });
       px = v.x; pz = v.z;
     }
-    tl.add(() => { tl.pause(); glideTo(x, z, tx, ty, tz).eventCallback("onComplete", () => tl.resume()); });
+    tl.add(() => { if (gen !== walkGen) return; tl.pause(); const g = glideTo(x, z, tx, ty, tz); g.data = "walk"; g.eventCallback("onComplete", () => { if (gen === walkGen) tl.resume(); }); });
     tl.to({}, { duration: 0.01 });
     return tl;
   }
@@ -369,6 +395,13 @@ async function boot() {
     setTourBtn(true);
     const tl = gsap.timeline({ onComplete: () => { mode = "free"; setTourBtn(false); } });
     let start = 0;
+    // starting from the street: walk up to the door, let it open, then step in
+    if (rig.z >= DIM.front - 0.3) {
+      tl.call(() => { tl.pause(); const g = gsap.to(rig, { x: 0, z: DIM.front + 1.3, yaw: shortest(rig.yaw, 0), pitch: -0.04, duration: Math.min(4, 1 + Math.hypot(rig.x, rig.z - DIM.front) * 0.35), ease: "power2.inOut", data: "walk" }); g.eventCallback("onComplete", () => tl.resume()); });
+      tl.call(() => { setDoors(true); });
+      tl.to({}, { duration: 0.9 });
+      tl.call(() => { tl.pause(); const g = gsap.to(rig, { z: DIM.front - 1.4, duration: 2.2, ease: "power2.inOut", data: "walk" }); g.eventCallback("onComplete", () => tl.resume()); });
+    }
     if (fromIndex == null && rig.z < DIM.front) {
       let best = Infinity;
       TOUR.forEach((s, i) => { if (s === "desk") return; const it = prodState[s[0]]; const p = standFor(it); const d = Math.hypot(p.x - rig.x, p.z - rig.z); if (d < best) { best = d; start = i; } });
@@ -391,6 +424,7 @@ async function boot() {
     tourTl = tl;
   }
   function stopTour() {
+    walkGen++;
     if (tourTl) { tourTl.kill(); tourTl = null; }
     gsap.killTweensOf(rig);
     gsap.globalTimeline.getChildren(false, true, true).forEach(t => { if (t.data === "walk") t.kill(); });
@@ -405,6 +439,7 @@ async function boot() {
   let barId = null;
   function focusProduct(id, pin) {
     if (!pin) return;
+    userMoved = true;
     pinnedId = id; const it = prodState[id];
     if (mode !== "tour") {
       gsap.killTweensOf(rig);
@@ -417,7 +452,8 @@ async function boot() {
     if (id === barId) return;
     if (barId) highlight(barId, 0);
     barId = id;
-    if (!id) { ui.bar.classList.remove("is-on"); ui.bar.setAttribute("aria-hidden", "true"); return; }
+    if (!id) { ui.bar.classList.remove("is-on"); ui.bar.setAttribute("aria-hidden", "true"); ui.bar.inert = true; return; }
+    ui.bar.inert = false;
     highlight(id, 0.06);
     const p = BY_ID[id], s = SEC_BY_ID[p.sec];
     ui.barImg.src = thumbs[id] || "";
@@ -440,8 +476,10 @@ async function boot() {
 
   function addToBasket(id) {
     const ex = basket.find(i => i.id === id);
+    if (ex && ex.q >= 99) { toast("You can take up to 99 of one product"); return; }
     if (ex) ex.q++; else basket.push({ id, q: 1 });
     save(); syncCart(); syncBarButton(); syncList();
+    clearTimeout(hintTimer); ui.hint.classList.remove("is-on"); ui.hint.hidden = true; // the toast takes its place
     const it = prodState[id];
     if (it && qtyOf(id) === 1) flyToBasket(it); else bumpCart();
     toast(`${BY_ID[id].name} is in your basket`);
@@ -449,11 +487,14 @@ async function boot() {
   }
   function removeOne(id) {
     const ex = basket.find(i => i.id === id); if (!ex) return;
-    ex.q--; if (ex.q <= 0) { basket = basket.filter(i => i !== ex); cart.remove(id); }
+    ex.q--; if (ex.q <= 0) { basket = basket.filter(i => i !== ex); cancelFly(id); cart.remove(id); }
     save(); syncCart(); syncBarButton(); syncList(); renderSlip();
     drawDesk(totals().n ? "ready" : "idle");
   }
+  const flying = {};
+  function cancelFly(id) { const f = flying[id]; if (f) { f.tween.kill(); scene.remove(f.holder); delete flying[id]; } }
   function flyToBasket(it) {
+    cancelFly(it.p.id);
     const holder = cart.makeItem(it.p);
     if (REDUCED || !cart.group.visible) { cart.place(holder, it.p.id); return; }
     const from = it.hotWorld.clone();
@@ -461,7 +502,8 @@ async function boot() {
     holder.position.copy(from);
     const s0 = 1, s1 = holder.userData.fitScale;
     const st = { t: 0 };
-    gsap.to(st, {
+    flying[it.p.id] = { holder, tween: null };
+    flying[it.p.id].tween = gsap.to(st, {
       t: 1, duration: 0.9, ease: "power2.inOut",
       onUpdate: () => {
         const to = cart.slotWorld(it.p.id);
@@ -471,7 +513,7 @@ async function boot() {
         holder.scale.setScalar(s0 + (s1 - s0) * st.t);
         holder.rotation.y = rig.yaw + st.t * Math.PI * 0.8;
       },
-      onComplete: () => { cart.place(holder, it.p.id); bumpCart(); }
+      onComplete: () => { delete flying[it.p.id]; if (qtyOf(it.p.id) > 0) { cart.place(holder, it.p.id); bumpCart(); } else scene.remove(holder); }
     });
   }
   function bumpCart() {
@@ -526,6 +568,7 @@ async function boot() {
     ui.slipDate.textContent = d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) + " · " + d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
   }
   function openSlip(fromDesk) {
+    userMoved = true; endJoy(); for (const k in keys) keys[k] = false; ui.hud.inert = true;
     ui.slip.classList.remove("is-sent");
     ui.slipDone.hidden = true; ui.slipHead.hidden = false;
     renderSlip();
@@ -535,6 +578,7 @@ async function boot() {
     setTimeout(() => (totals().n ? ui.slipName : ui.slipClose).focus({ preventScroll: true }), 60);
   }
   function closeSlip() {
+    ui.hud.inert = false;
     ui.slip.classList.remove("is-on");
     slipOpen = false;
     setTimeout(() => { if (!slipOpen) ui.slip.hidden = true; }, 340);
@@ -552,7 +596,7 @@ async function boot() {
     confetti(1);
     ui.slipAgain.focus({ preventScroll: true });
     // a fresh basket for the next visit
-    basket = []; save(); cart.clear(); syncCart(); syncList(); syncBarButton();
+    basket = []; save(); for (const id in flying) cancelFly(id); cart.clear(); syncCart(); syncList(); syncBarButton();
   });
 
   // the screen on the till
@@ -606,9 +650,14 @@ async function boot() {
   // ---------------- input ----------------
   let drag = null;
   const mouse = { x: 0, y: 0, moved: false, cx: 0, cy: 0 };
+  const TAP = COARSE ? 10 : 5;
+  const look = { vx: 0, vy: 0, lx: 0, ly: 0, lt: 0 };
   ui.canvas.addEventListener("pointerdown", (e) => {
     if (mode === "intro" || mode === "entering") return;
+    if (drag) return; // a second finger doesn't take over the look
+    look.vx = look.vy = 0;
     drag = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: 0, yaw: rig.yaw, pitch: rig.pitch };
+    look.lx = e.clientX; look.ly = e.clientY; look.lt = performance.now();
     ui.canvas.setPointerCapture(e.pointerId);
   });
   ui.canvas.addEventListener("pointermove", (e) => {
@@ -616,23 +665,30 @@ async function boot() {
     if (!drag || drag.id !== e.pointerId) return;
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
     drag.moved = Math.max(drag.moved, Math.hypot(dx, dy));
-    if (drag.moved > 5) {
+    if (drag.moved > TAP) {
       if (mode === "tour") stopTour();
       userMoved = true;
       const k = (COARSE ? 0.0055 : 0.0036) * (58 / camera.fov);
       rig.yaw = drag.yaw + dx * k;
       rig.pitch = THREE.MathUtils.clamp(drag.pitch + dy * k * 0.9, -0.8, 0.5);
+      // remember how fast the view was turning, so it can coast to a stop on release
+      const now = performance.now(), dtm = Math.max(8, now - look.lt);
+      look.vx = look.vx * 0.5 + ((e.clientX - look.lx) * k / dtm) * 0.5; look.vy = look.vy * 0.5 + ((e.clientY - look.ly) * k * 0.9 / dtm) * 0.5;
+      look.lx = e.clientX; look.ly = e.clientY; look.lt = now;
       ui.canvas.classList.add("is-dragging");
     }
   });
   const endDrag = (e) => {
     if (!drag || drag.id !== e.pointerId) return;
     ui.canvas.classList.remove("is-dragging");
-    if (drag.moved <= 5) pick(e.clientX, e.clientY);
+    if (drag.moved <= TAP) { pick(e.clientX, e.clientY); look.vx = look.vy = 0; }
+    else if (performance.now() - look.lt > 60 || REDUCED) look.vx = look.vy = 0; // finger rested before lifting: no coast
     drag = null;
   };
   ui.canvas.addEventListener("pointerup", endDrag);
-  ui.canvas.addEventListener("pointercancel", () => { drag = null; ui.canvas.classList.remove("is-dragging"); });
+  const dropDrag = () => { drag = null; look.vx = look.vy = 0; ui.canvas.classList.remove("is-dragging"); };
+  ui.canvas.addEventListener("pointercancel", dropDrag);
+  ui.canvas.addEventListener("lostpointercapture", (e) => { if (drag && drag.id === e.pointerId) dropDrag(); });
   ui.canvas.addEventListener("pointerleave", () => { mouse.moved = false; hoverId = null; ui.tip.classList.remove("is-on"); });
   ui.canvas.addEventListener("wheel", (e) => {
     if (mode !== "free" && mode !== "tour") return;
@@ -643,8 +699,9 @@ async function boot() {
     if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) rig.yaw -= e.deltaX * 0.002;
   }, { passive: false });
   addEventListener("keydown", (e) => {
-    if (e.target.closest && e.target.closest("input, textarea, select")) return;
     if (e.key === "Escape") { if (slipOpen) closeSlip(); else if (!ui.list.hidden) closeList(); else if (mode === "tour") stopTour(); return; }
+    if (slipOpen) return;
+    if (e.target.closest && e.target.closest("input, textarea, select")) return;
     if (mode !== "free" && mode !== "tour") return;
     const k = e.key.toLowerCase();
     if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", "q", "e", "shift"].includes(k)) {
@@ -656,28 +713,35 @@ async function boot() {
   });
   addEventListener("keyup", (e) => { keys[e.key.toLowerCase()] = false; });
   addEventListener("blur", () => { for (const k in keys) keys[k] = false; });
-  ui.joy.addEventListener("pointerdown", (e) => { joy.active = true; joy.id = e.pointerId; ui.joy.setPointerCapture(e.pointerId); moveJoy(e); if (mode === "tour") stopTour(); userMoved = true; });
+  ui.joy.addEventListener("pointerdown", (e) => { ui.joy.classList.add("is-active"); joy.active = true; joy.id = e.pointerId; ui.joy.setPointerCapture(e.pointerId); moveJoy(e); if (mode === "tour") stopTour(); userMoved = true; });
   ui.joy.addEventListener("pointermove", (e) => { if (joy.active && e.pointerId === joy.id) moveJoy(e); });
-  const endJoy = () => { joy.active = false; joy.x = joy.y = 0; ui.joyKnob.style.transform = ""; };
-  ui.joy.addEventListener("pointerup", endJoy); ui.joy.addEventListener("pointercancel", endJoy);
+  const endJoy = () => { joy.active = false; joy.x = joy.y = 0; ui.joyKnob.style.transform = ""; ui.joy.classList.remove("is-active"); };
+  ui.joy.addEventListener("pointerup", endJoy); ui.joy.addEventListener("pointercancel", endJoy); ui.joy.addEventListener("lostpointercapture", endJoy);
   function moveJoy(e) {
     const r = ui.joy.getBoundingClientRect(), R = r.width / 2;
     let dx = e.clientX - (r.left + R), dy = e.clientY - (r.top + R);
     const l = Math.hypot(dx, dy); if (l > R * 0.62) { dx *= R * 0.62 / l; dy *= R * 0.62 / l; }
     ui.joyKnob.style.transform = `translate(${dx}px, ${dy}px)`;
     joy.x = dx / (R * 0.62); joy.y = dy / (R * 0.62);
+    if (Math.hypot(joy.x, joy.y) < 0.15) joy.x = joy.y = 0; // dead zone so a resting thumb doesn't drift
   }
   const ray = new THREE.Raycaster(); ray.far = 12;
+  const pickTargets = [...pickables, ...W.occluders];
   function hitAt(nx, ny) {
     ray.setFromCamera({ x: nx, y: ny }, camera);
-    const hits = ray.intersectObjects(pickables, false);
-    for (const h of hits) { let o = h.object; while (o && !o.userData.pid) o = o.parent; if (o) return o.userData.pid; }
-    return null;
+    // walls count too, so a tap on the facade never picks a product hidden behind it
+    const hits = ray.intersectObjects(pickTargets, false);
+    if (!hits.length) return null;
+    let o = hits[0].object; while (o && !o.userData.pid) o = o.parent;
+    return o ? o.userData.pid : null;
   }
+  // only a tap on the counter itself (not anywhere near it) opens the receipt
+  const deskBox = new THREE.Box3(new THREE.Vector3(-1.6, 0, DIM.deskZ - 0.7), new THREE.Vector3(1.6, 1.4, DIM.deskZ + 0.6));
+  function deskHit(cx, cy) { ray.setFromCamera({ x: (cx / innerWidth) * 2 - 1, y: -(cy / innerHeight) * 2 + 1 }, camera); return ray.ray.intersectsBox(deskBox); }
   function pick(cx, cy) {
     const id = hitAt((cx / innerWidth) * 2 - 1, -(cy / innerHeight) * 2 + 1);
     if (id) { if (mode === "tour") stopTour(); focusProduct(id, true); }
-    else if (nearDesk() < 3.2) openSlip(true);
+    else if (nearDesk() < 3.2 && deskHit(cx, cy)) openSlip(true);
   }
 
   // ---------------- movement + collisions ----------------
@@ -709,7 +773,8 @@ async function boot() {
     const dx = (-sin * vel.y + cos * vel.x) * dt, dz = (-cos * vel.y - sin * vel.x) * dt;
     if (!blocked(rig.x + dx, rig.z)) rig.x += dx; else vel.x *= 0.3;
     if (!blocked(rig.x, rig.z + dz)) rig.z += dz; else vel.y *= 0.3;
-    if (rig.z < DIM.front - 0.2 && Math.abs(rig.z - DIM.front) < 2.5 && W.doors[0] && Math.abs(W.doors[0].obj.rotation.y) < 0.5) openDoors(true);
+    // the doors open as you come near them, from either side, and swing shut once you've moved away
+    if (W.doors[0] && mode !== "entering") { const dz = Math.abs(rig.z - DIM.front); if (dz < 2.3 && Math.abs(rig.x) < 2.2) setDoors(true); else if (dz > 4.5 && doorsOpen) setDoors(false); }
     return Math.hypot(vel.x, vel.y);
   }
 
@@ -731,8 +796,7 @@ async function boot() {
   // ---------------- dots ----------------
   const tmp = new THREE.Vector3(), camW = new THREE.Vector3();
   const occRay = new THREE.Raycaster();
-  const occluders = [];
-  scene.traverse(o => { if (o.isMesh && o.geometry && (o.geometry.type === "BoxGeometry" || o.geometry.type === "ExtrudeGeometry") && !o.material.transparent && !(o.material.transmission > 0)) { const b = new THREE.Box3().setFromObject(o); const s = b.getSize(new THREE.Vector3()); if (s.x * s.y + s.y * s.z > 0.5 && s.y > 0.5) occluders.push(o); } });
+  const occluders = W.occluders;
   function occluded(hw, dist) {
     occRay.set(camW, tmp.copy(hw).sub(camW).normalize()); occRay.far = dist - 0.25;
     return occRay.intersectObjects(occluders, false).length > 0;
@@ -776,7 +840,9 @@ async function boot() {
 
   // ---------------- loop ----------------
   const clock = new THREE.Clock();
-  let frame = 0, fpsAcc = 0, fpsN = 0, degraded = LOW, bobT = 0, puffT = 3;
+  let frame = 0, fpsAcc = 0, fpsN = 0, bobT = 0, puffT = 3;
+  const RES = [1, 0.85, 0.72, 0.6]; let resLevel = 0, slowRuns = 0;
+  function applyRes() { const pr = DPR * RES[resLevel]; renderer.setPixelRatio(pr); composer.setPixelRatio(pr); composer.setSize(innerWidth, innerHeight); }
   function loop() {
     const dt = Math.min(0.05, clock.getDelta());
     const t = clock.elapsedTime;
@@ -785,24 +851,45 @@ async function boot() {
     let sp = 0;
     if (mode === "free") sp = move(dt);
     if (!REDUCED) { bobT += dt * (sp > 0.2 ? sp * 2.4 : 0); rig.bob = Math.sin(bobT * 2) * 0.01 * Math.min(1, sp / 2); cart.group.rotation.z = Math.sin(bobT) * 0.02 * Math.min(1, sp / 2); cart.group.rotation.x = Math.sin(t * 0.9) * 0.008; }
+    if (!drag && (look.vx || look.vy)) {
+      rig.yaw += look.vx * dt * 1000; rig.pitch = THREE.MathUtils.clamp(rig.pitch + look.vy * dt * 1000, -0.8, 0.5);
+      const f = Math.pow(0.004, dt); look.vx *= f; look.vy *= f;
+      if (Math.abs(look.vx) < 1e-5 && Math.abs(look.vy) < 1e-5) look.vx = look.vy = 0;
+    }
     applyRig();
-    { const k = THREE.MathUtils.clamp((rig.z - DIM.front) / 3, 0, 1); hemi.intensity = 0.32 - 0.28 * k; renderer.toneMappingExposure = 1.22 - 0.22 * k; }
+    { const k = THREE.MathUtils.clamp((rig.z - DIM.front) / 3, 0, 1); hemi.intensity = 0.32 - 0.28 * k; renderer.toneMappingExposure = 1.22 - 0.22 * k; W.outdoors = rig.z > DIM.front + 1.2; }
     // the tester atomiser puffs now and then
     puffT -= dt;
     for (const e of W.emitters) if (e.puff) { if (puffT < 0) { e.rate = 3.5; puffT = 5 + Math.random() * 3; } e.rate = Math.max(0, e.rate - dt * 5); }
     air.update(dt, W.emitters, camera);
     motes.update(dt, t);
-    if (frame % 2 === 0) updateDots();
+    updateDots();
     if (frame % 3 === 0) { updateHover(); updateWhere(); }
     if (mode === "free") { const nd = nearDesk(); if (nd < 1.9 && deskArmed && !slipOpen) { deskArmed = false; openSlip(true); } if (nd > 3.4) deskArmed = true; }
     lens.uniforms.uTime.value = t;
     composer.render(dt);
     stepConfetti();
-    if (!degraded && mode === "free") { fpsAcc += dt; fpsN++; if (fpsN === 90) { if (fpsN / fpsAcc < 34 && gtao) { gtao.enabled = false; degraded = true; } fpsAcc = 0; fpsN = 0; } }
+    // keep it smooth: watch the frame time and trade resolution, then ambient occlusion, for frame rate
+    if (!document.hidden && dt > 0 && dt < 0.25) { fpsAcc += dt; fpsN++; }
+    if (fpsN >= 60) {
+      const ms = (fpsAcc / fpsN) * 1000; fpsAcc = 0; fpsN = 0;
+      if (ms > 24 && resLevel < RES.length - 1) { resLevel++; applyRes(); slowRuns = 0; }
+      else if (ms > 24 && gtao && gtao.enabled) { gtao.enabled = false; }
+      else if (ms < 13 && resLevel > 0) { if (++slowRuns > 4) { resLevel--; applyRes(); slowRuns = 0; } }
+    }
   }
   renderer.setAnimationLoop(loop);
-  document.addEventListener("visibilitychange", () => { renderer.setAnimationLoop(document.hidden ? null : loop); clock.getDelta(); });
-  addEventListener("resize", () => { renderer.setSize(innerWidth, innerHeight, false); composer.setSize(innerWidth, innerHeight); lens.uniforms.uRes.value.set(innerWidth, innerHeight); fov(); });
+  document.addEventListener("visibilitychange", () => { renderer.setAnimationLoop(document.hidden || !ui.list.hidden ? null : loop); clock.getDelta(); });
+  let rz = 0, lastW = innerWidth;
+  function onResize() {
+    // the on-screen keyboard resizes the page while typing a name: leave the 3D view alone then
+    if (document.activeElement === ui.slipName && innerWidth === lastW) return;
+    lastW = innerWidth;
+    renderer.setSize(innerWidth, innerHeight, false); composer.setSize(innerWidth, innerHeight); lens.uniforms.uRes.value.set(innerWidth, innerHeight); fov();
+    if (W.reflector) W.reflector.getRenderTarget().setSize(Math.round(innerWidth * 0.5 * Math.min(devicePixelRatio, 1.5)), Math.round(innerHeight * 0.5 * Math.min(devicePixelRatio, 1.5)));
+  }
+  addEventListener("resize", () => { cancelAnimationFrame(rz); rz = requestAnimationFrame(onResize); });
+  addEventListener("orientationchange", () => setTimeout(onResize, 250));
 
   listHooks.add = (id) => addToBasket(id);
   listHooks.pause = (on) => renderer.setAnimationLoop(on ? null : loop);
@@ -810,7 +897,6 @@ async function boot() {
 }
 
 // ================= list view (also the no-WebGL fallback) =================
-const listHooks = {};
 function buildList() {
   ui.listBody.innerHTML = "";
   for (const s of SECTIONS) {
@@ -876,7 +962,7 @@ function buildBasket() {
 
   const slots = [];
   for (const r of [0, 1]) for (const c of [1, 2, 0, 3]) slots.push(new THREE.Vector3(-0.135 + c * 0.09, 0.008, -0.055 + r * 0.11));
-  const items = {}; let used = 0;
+  const items = {}, pend = {}; let used = 0;
   const box = new THREE.Box3(), sz = new THREE.Vector3();
   return {
     group,
@@ -892,9 +978,11 @@ function buildBasket() {
       holder.userData.fitScale = Math.min(1.35, 0.15 / Math.max(sz.x, sz.y, sz.z, 0.001) * (tall ? 1 : 1.2));
       return holder;
     },
-    slotWorld(id) { const idx = items[id] ? items[id].slot : used; const p = slots[idx % slots.length].clone(); p.y += Math.floor(idx / slots.length) * 0.05; return group.localToWorld(p); },
+    freeSlot() { const taken = new Set([...Object.values(items).map(i => i.slot), ...Object.values(pend)]); let k = 0; while (taken.has(k)) k++; return k; },
+    slotWorld(id) { if (!items[id] && pend[id] == null) pend[id] = this.freeSlot(); const idx = items[id] ? items[id].slot : pend[id]; const p = slots[idx % slots.length].clone(); p.y += Math.floor(idx / slots.length) * 0.05; return group.localToWorld(p); },
     place(holder, id) {
-      const slot = used++;
+      if (items[id]) { group.remove(items[id].obj); delete items[id]; }
+      const slot = pend[id] != null ? pend[id] : this.freeSlot(); delete pend[id]; used = Math.max(used, slot + 1);
       const p = slots[slot % slots.length].clone(); p.y += Math.floor(slot / slots.length) * 0.05;
       group.add(holder); holder.position.copy(p);
       holder.scale.setScalar(holder.userData.fitScale);
@@ -902,8 +990,8 @@ function buildBasket() {
       items[id] = { obj: holder, slot };
     },
     fill(p) { const h = this.makeItem(p); this.place(h, p.id); },
-    remove(id) { if (items[id]) { group.remove(items[id].obj); delete items[id]; } },
-    clear() { for (const id in items) group.remove(items[id].obj); for (const id in items) delete items[id]; used = 0; }
+    remove(id) { delete pend[id]; if (items[id]) { group.remove(items[id].obj); delete items[id]; } },
+    clear() { for (const id in items) group.remove(items[id].obj); for (const id in items) delete items[id]; for (const id in pend) delete pend[id]; used = 0; }
   };
 }
 

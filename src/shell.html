@@ -1,4 +1,5 @@
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Saelle Flagship Store</title>
 <meta name="description" content="Walk into the Saelle beauty store in 3D: skincare, fragrance, makeup, hair and body. Fill your basket and check out at the counter.">
 <meta name="theme-color" content="#1E1418">
@@ -79,7 +80,7 @@
       <p>Select any <span class="st-hint__dot" aria-hidden="true"></span> to see the product and its price.</p>
     </div>
 
-    <div class="st-bar" id="st-bar" aria-hidden="true">
+    <div class="st-bar" id="st-bar" aria-hidden="true" inert>
       <img class="st-bar__img" id="st-bar-img" alt="" width="68" height="68">
       <div class="st-bar__txt">
         <p class="st-bar__kick" id="st-bar-kick"></p>
@@ -97,7 +98,7 @@
   </div>
 
   <!-- ===== the receipt at the counter ===== -->
-  <aside class="st-slip" id="st-slip" hidden aria-labelledby="st-slip-title" role="dialog">
+  <aside class="st-slip" id="st-slip" hidden aria-labelledby="st-slip-title" role="dialog" aria-modal="true">
     <div class="st-slip__paper">
       <button class="st-slip__x" id="st-slip-close" type="button" aria-label="Close the receipt">
         <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>

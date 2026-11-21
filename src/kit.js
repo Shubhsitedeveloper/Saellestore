@@ -41,7 +41,7 @@ const M = {};
 export function mats() {
   if (M.gold) return M;
   M.gold = new THREE.MeshPhysicalMaterial({ color: 0xe2bd7a, metalness: 1, roughness: 0.16, clearcoat: 0.4, clearcoatRoughness: 0.1 });
-  M.brass = new THREE.MeshStandardMaterial({ color: 0xc9a066, metalness: 1, roughness: 0.3 });
+  M.brass = new THREE.MeshStandardMaterial({ color: 0xc9a066, metalness: 1, roughness: 0.36 });
   M.brushedBrass = new THREE.MeshStandardMaterial({ color: 0xbf9560, metalness: 1, roughness: 0.42 });
   M.roseGold = new THREE.MeshPhysicalMaterial({ color: 0xe8b4a0, metalness: 1, roughness: 0.2, clearcoat: 0.5 });
   M.chrome = new THREE.MeshStandardMaterial({ color: 0xf2f4f6, metalness: 1, roughness: 0.08 });
@@ -121,8 +121,11 @@ export function mesh(geo, mat, x = 0, y = 0, z = 0, parent) {
 export function box(w, h, d, mat, x, y, z, parent, r = 0) {
   return mesh(r > 0 ? rbox(w, h, d, r) : new THREE.BoxGeometry(w, h, d), mat, x, y, z, parent);
 }
+// level of detail for round things: shelf copies seen from a metre away don't need 56 sides
+export const LOD = { seg: 1 };
+const segs = (n) => Math.max(10, Math.round(n * LOD.seg));
 export function cyl(rt, rb, h, mat, x, y, z, parent, seg = 40, open = false) {
-  return mesh(new THREE.CylinderGeometry(rt, rb, h, seg, 1, open), mat, x, y, z, parent);
+  return mesh(new THREE.CylinderGeometry(rt, rb, h, segs(seg), 1, open), mat, x, y, z, parent);
 }
 export function plane(w, h, mat, x, y, z, parent) {
   const m = mesh(new THREE.PlaneGeometry(w, h), mat, x, y, z, parent);
@@ -131,7 +134,7 @@ export function plane(w, h, mat, x, y, z, parent) {
 }
 // lathe from [radius, y] pairs, bottom to top
 export function lathe(pts, seg = 48) {
-  return new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(Math.max(0, r), y)), seg);
+  return new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(Math.max(0, r), y)), segs(seg));
 }
 // a rounded profile: a vertical wall from y0 to y1 at radius r, with fillets of radius f at both ends
 export function capsuleProfile(r, y0, y1, fBot, fTop, { closeBottom = true, closeTop = true, steps = 6 } = {}) {

@@ -286,9 +286,12 @@ export function cartonRow(p, w, h, d, n, deep = 1, stack = 1, gap = 0.006) {
   const im = new THREE.InstancedMesh(new THREE.BoxGeometry(w, h, d), mats, n * deep * stack);
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1);
   let k = 0;
+  const zero = new THREE.Matrix4().makeScale(0, 0, 0);
   for (let st = 0; st < stack; st++) for (let r = 0; r < deep; r++) for (let i = 0; i < n; i++) {
-    e.set(0, (Math.random() - 0.5) * 0.05, 0); q.setFromEuler(e);
-    v.set((i - (n - 1) / 2) * (w + gap) + (Math.random() - 0.5) * 0.004, h / 2 + st * (h + 0.001), -r * (d + gap));
+    // a shelf that's been shopped: the odd gap, a box pulled forward or left at an angle
+    if (st === stack - 1 && Math.random() < 0.09) { im.setMatrixAt(k++, zero); continue; }
+    e.set(0, (Math.random() - 0.5) * (Math.random() < 0.12 ? 0.35 : 0.05), 0); q.setFromEuler(e);
+    v.set((i - (n - 1) / 2) * (w + gap) + (Math.random() - 0.5) * 0.004, h / 2 + st * (h + 0.001), -r * (d + gap) + (Math.random() < 0.1 ? 0.012 : 0));
     im.setMatrixAt(k++, m4.compose(v, q, one));
   }
   im.castShadow = true; im.receiveShadow = true;
