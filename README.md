@@ -10,7 +10,7 @@ Open `index.html` through any static server, because textures and models are loa
 npx serve .        # or: python3 -m http.server 8080
 ```
 
-**Live:** https://shubhsitedeveloper.github.io/saellestore/ (GitHub Pages, served from `main`). No build step is needed to host it.
+**Live:** https://shubhsitedeveloper.github.io/Saellestore/ (GitHub Pages, served from `main`). No build step is needed to host it.
 
 Add `?low` to the URL for the light mode, which turns off ambient occlusion and reflections. Phones pick light mode on their own.
 
