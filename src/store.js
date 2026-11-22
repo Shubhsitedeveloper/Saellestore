@@ -100,7 +100,7 @@ async function boot() {
     const w = new THREE.SpotLight(0xffe2c4, 18, 10, 1.0, 0.9, 1.8);
     w.position.set(s * 3.4, 3.7, z); w.target.position.set(s * 7, 1.2, z); scene.add(w, w.target);
   }
-  const desk = new THREE.SpotLight(0xffe2c4, 22, 8, 0.8, 0.9, 1.4); desk.position.set(0, 3.9, DIM.deskZ + 0.6); desk.target.position.set(0, 0.8, DIM.deskZ - 0.6); scene.add(desk, desk.target);
+  const desk = new THREE.SpotLight(0xffe2c4, 16, 8, 0.8, 0.9, 1.4); desk.position.set(0, 3.9, DIM.deskZ + 0.6); desk.target.position.set(0, 0.8, DIM.deskZ - 0.6); scene.add(desk, desk.target);
   // facade washers grazing the stone
   for (const x of [-9.7, -2.0, 2.0, 9.7]) { const u = new THREE.SpotLight(0xffcf98, 48, 7, 0.36, 1, 1.5); u.position.set(x, 0.12, DIM.front + 1.05); u.target.position.set(x, 4.4, DIM.front + 0.62); scene.add(u, u.target); W.extLights.push(u); }
   // outdoors the city light comes from the street HDRI: keep it as reflections, not as a flat fill
@@ -140,7 +140,7 @@ async function boot() {
   composer.addPass(bloom);
   // the camera itself: a touch of lens fringing at the edges, vignette, a soft grade and fine film grain
   const lens = new ShaderPass({
-    uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uRes: { value: new THREE.Vector2(innerWidth, innerHeight) }, uPx: { value: new THREE.Vector2(1 / (innerWidth * DPR), 1 / (innerHeight * DPR)) }, uGrain: { value: 0.006 }, uCA: { value: 0.0 } },
+    uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uRes: { value: new THREE.Vector2(innerWidth, innerHeight) }, uPx: { value: new THREE.Vector2(1 / (innerWidth * DPR), 1 / (innerHeight * DPR)) }, uGrain: { value: 0.0 }, uCA: { value: 0.0 } },
     vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
     // tone mapping + sRGB happen here too (one full-screen pass instead of two)
     fragmentShader: `uniform sampler2D tDiffuse; uniform float uTime; uniform vec2 uRes; uniform vec2 uPx; uniform float uGrain; uniform float uCA; varying vec2 vUv;
@@ -151,7 +151,7 @@ async function boot() {
         vec3 c = vec3(texture2D(tDiffuse, vUv + off).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - off).b);
         // light unsharp mask: crisper edges and print on packs, no extra pass
         vec3 bl = (texture2D(tDiffuse, vUv + vec2(uPx.x, 0.)).rgb + texture2D(tDiffuse, vUv - vec2(uPx.x, 0.)).rgb + texture2D(tDiffuse, vUv + vec2(0., uPx.y)).rgb + texture2D(tDiffuse, vUv - vec2(0., uPx.y)).rgb) * 0.25;
-        c = max(c + (c - bl) * 0.35, 0.0);
+        c = max(c + (c - bl) * 0.25, 0.0);
         c = ACESFilmicToneMapping(c);
         c = sRGBTransferOETF(vec4(c, 1.0)).rgb;
         c = mix(c, c * c * (3.0 - 2.0 * c), 0.18); // a little photographic contrast
@@ -928,11 +928,13 @@ async function boot() {
   const clock = new THREE.Clock();
   let frame = 0, fpsAcc = 0, fpsN = 0, bobT = 0, puffT = 3;
   // quality tiers: start light, earn the expensive things only while the device holds 60 fps
+  // each tier is a pixel budget (megapixels), not a fixed scale: a phone's small screen gets a sharp 2x,
+  // a big monitor doesn't drown the GPU
   const TIERS = [
-    { pr: 1.0, bloom: false, refl: false, ao: false },
-    { pr: 1.25, bloom: true, refl: false, ao: false },
-    { pr: 1.5, bloom: true, refl: true, ao: false },
-    { pr: 1.5, bloom: true, refl: true, ao: true },
+    { mp: 1.0, bloom: false, refl: false, ao: false },
+    { mp: 2.0, bloom: true, refl: false, ao: false },
+    { mp: 3.0, bloom: true, refl: true, ao: false },
+    { mp: 3.0, bloom: true, refl: true, ao: true },
   ];
   const failed = TIERS.map(() => 0);
   let tier = params.has("tier") ? +params.get("tier") : 1, fastRuns = 0;
@@ -945,7 +947,7 @@ async function boot() {
     if (W.mirror) W.mirror.mesh.material = T.refl ? W.mirror.live : W.mirror.still;
     applyRes();
   }
-  function applyRes() { const pr = Math.min(DEV_PR, TIERS[tier].pr); renderer.setPixelRatio(pr); composer.setPixelRatio(pr); composer.setSize(innerWidth, innerHeight); lens.uniforms.uPx.value.set(1 / (innerWidth * pr), 1 / (innerHeight * pr)); if (W.reflector) W.reflector.getRenderTarget().setSize(Math.round(innerWidth * 0.4 * pr), Math.round(innerHeight * 0.4 * pr)); }
+  function applyRes() { const pr = Math.max(1, Math.min(DEV_PR, 2, Math.sqrt(TIERS[tier].mp * 1e6 / (innerWidth * innerHeight)))); renderer.setPixelRatio(pr); composer.setPixelRatio(pr); composer.setSize(innerWidth, innerHeight); lens.uniforms.uPx.value.set(1 / (innerWidth * pr), 1 / (innerHeight * pr)); if (W.reflector) W.reflector.getRenderTarget().setSize(Math.round(innerWidth * 0.4 * pr), Math.round(innerHeight * 0.4 * pr)); }
   function loop() {
     const dt = Math.min(0.05, clock.getDelta());
     const t = clock.elapsedTime;

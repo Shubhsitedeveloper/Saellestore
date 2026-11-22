@@ -1,6 +1,6 @@
 // Procedural product models at real-world size (metres). Origin = bottom centre, front = +z.
 import * as THREE from "three";
-import { mats, lacquer, matte, capMat, liquidGlass, clearGlass, rbox, mesh, cyl, lathe, capsuleProfile, labelTex, canvasTex, BRAND, FONT_D, FONT_B, spaced } from "./kit.js";
+import { LOD, mats, lacquer, matte, capMat, liquidGlass, clearGlass, rbox, mesh, cyl, lathe, capsuleProfile, labelTex, canvasTex, BRAND, FONT_D, FONT_B, spaced } from "./kit.js";
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const labelMats = {};
@@ -271,7 +271,7 @@ export function carton(p, w, h, d) {
   const fg = hsl.l > 0.6 ? BRAND.wine : "#f6ece4";
   const key = p.id;
   if (!cartonMats[key]) {
-    const face = labelTex("c" + key, { bg, fg, name: p.name, size: p.size, w: 256, h: 384 });
+    const face = labelTex("c" + key, { bg, fg, name: p.name, size: p.size, w: LOD.base > 0.6 ? 384 : 256, h: LOD.base > 0.6 ? 576 : 384 }); // crisper print on desktop
     const side = new THREE.MeshStandardMaterial({ color: bg, roughness: 0.55 });
     const front = new THREE.MeshStandardMaterial({ map: face, roughness: 0.5 });
     cartonMats[key] = [side, side, side, side, front, side];

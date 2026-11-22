@@ -23,7 +23,7 @@ export function buildWorld(scene, { extEnv, models, quality }) {
   const marble = pbrSet("stone_light", 1, 1);
   const floorMat = new THREE.MeshPhysicalMaterial({ map: marble.map, normalMap: marble.normalMap, normalScale: new THREE.Vector2(0.5, 0.5), roughnessMap: marble.roughnessMap, roughness: 0.42, clearcoat: 0.45, clearcoatRoughness: 0.15, color: 0xece3d9 });
   const plaster = pbrSet("plaster_blush", 2.2, 1.4);
-  const wallMat = new THREE.MeshStandardMaterial({ map: plaster.map, normalMap: plaster.normalMap, normalScale: new THREE.Vector2(0.12, 0.12), roughness: 0.88, color: 0xfff8f4 });
+  const wallMat = new THREE.MeshStandardMaterial({ map: plaster.map, normalMap: plaster.normalMap, normalScale: new THREE.Vector2(0.05, 0.05), roughness: 0.9, color: 0xfff8f4 });
   const ceilMat = new THREE.MeshStandardMaterial({ color: 0xebe3dc, roughness: 0.95, emissive: 0xfff1e6, emissiveIntensity: 0.0 });
   const walnut = pbrSet("american_walnut_veneer", 1.5, 1.5);
   const walnutMat = new THREE.MeshPhysicalMaterial({ map: walnut.map, normalMap: walnut.normalMap, normalScale: new THREE.Vector2(0.4, 0.4), roughness: 0.42, clearcoat: 0.5, clearcoatRoughness: 0.25, color: 0xc99d78 });
@@ -316,8 +316,10 @@ export function buildWorld(scene, { extEnv, models, quality }) {
   {
     const g = new THREE.Group(); g.position.set(0, 0, DIM.deskZ); IN.add(g);
     const L = 3.4, D = 0.7, H = 1.0;
-    const front = box(L, H - 0.05, 0.04, brassFluted, 0, (H - 0.05) / 2, D / 2 - 0.02, g);
-    fixBoxFlute(front.geometry, L, H);
+    box(L, H - 0.05, 0.04, fluted(walnutVMat, 64), 0, (H - 0.05) / 2, D / 2 - 0.02, g); // fluted walnut, ~19 reeds a metre
+    // thin brass trims top and bottom, like a real cash desk
+    box(L + 0.004, 0.022, 0.05, M.brass, 0, H - 0.07, D / 2 - 0.015, g);
+    box(L + 0.004, 0.018, 0.05, M.brass, 0, 0.075, D / 2 - 0.015, g);
     box(L, H - 0.05, D - 0.04, walnutMat, 0, (H - 0.05) / 2, -0.02, g);
     box(L + 0.06, 0.05, D + 0.08, topMat, 0, H - 0.025, 0, g, 0.008);
     box(L - 0.08, 0.06, D - 0.2, M.blackMatte, 0, 0.03, 0, g);
@@ -782,6 +784,7 @@ function reflectiveFloor(base, tex, tm) {
         vec3 refl = texture2D(tReflect, rUv).rgb * 0.36;
         refl += texture2D(tReflect, rUv + vec2(bl, 0.)).rgb * 0.16; refl += texture2D(tReflect, rUv - vec2(bl, 0.)).rgb * 0.16;
         refl += texture2D(tReflect, rUv + vec2(0., bl)).rgb * 0.16; refl += texture2D(tReflect, rUv - vec2(0., bl)).rgb * 0.16;
+        refl = min(refl, vec3(1.6)); // a bulb's reflection stays a soft highlight, not a glowing block
         float fres = 0.18 + 0.82 * pow(1.0 - clamp(dot(normalize(vViewPosition), normal), 0.0, 1.0), 4.0);
         outgoingLight += refl * fres * 0.5 * uReflAmt * (1.0 - roughnessFactor * 0.75);
         #include <opaque_fragment>`);
