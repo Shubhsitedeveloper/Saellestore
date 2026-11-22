@@ -11,16 +11,19 @@ export const DIM = { x: 7, front: 5, back: -17, ceil: 4.0, fT: 0.45, bayZ: [-0.6
 export function buildWorld(scene, { extEnv, models, quality }) {
   const HI = quality === "high";
   const M = mats();
-  const W = { extLights: [], frameId: 0, products: [], obstacles: [], occluders: [], emitters: [], doors: [], lights: [], blinkers: [], extMats: [], spinners: [] };
+  const W = {
+    // render something with a list of objects hidden, putting each back exactly as it was
+    hideFor(list, fn) { if (!list || !list.length) return fn(); const st = W._vis && W._vis.length >= list.length ? W._vis : (W._vis = new Uint8Array(list.length * 2)); for (let i = 0; i < list.length; i++) { st[i] = list[i].visible ? 1 : 0; list[i].visible = false; } fn(); for (let i = 0; i < list.length; i++) list[i].visible = st[i] === 1; },
+    extLights: [], frontLights: [], frameId: 0, products: [], obstacles: [], occluders: [], emitters: [], doors: [], lights: [], blinkers: [], extMats: [], spinners: [] };
   const rnd = mulberry(7);
   const ext = (m) => { m.envMap = extEnv; W.extMats.push(m); return m; };
 
   // ======================= materials =======================
   const marble = pbrSet("stone_light", 1, 1);
-  const floorMat = new THREE.MeshPhysicalMaterial({ map: marble.map, normalMap: marble.normalMap, normalScale: new THREE.Vector2(0.3, 0.3), roughnessMap: marble.roughnessMap, roughness: 0.42, clearcoat: 0.7, clearcoatRoughness: 0.1, color: 0xf6eee6 });
+  const floorMat = new THREE.MeshPhysicalMaterial({ map: marble.map, normalMap: marble.normalMap, normalScale: new THREE.Vector2(0.5, 0.5), roughnessMap: marble.roughnessMap, roughness: 0.42, clearcoat: 0.45, clearcoatRoughness: 0.15, color: 0xece3d9 });
   const plaster = pbrSet("plaster_blush", 2.2, 1.4);
   const wallMat = new THREE.MeshStandardMaterial({ map: plaster.map, normalMap: plaster.normalMap, normalScale: new THREE.Vector2(0.12, 0.12), roughness: 0.88, color: 0xfff8f4 });
-  const ceilMat = new THREE.MeshStandardMaterial({ color: 0xf4eeea, roughness: 0.95, emissive: 0xfff1e6, emissiveIntensity: 0.04 });
+  const ceilMat = new THREE.MeshStandardMaterial({ color: 0xebe3dc, roughness: 0.95, emissive: 0xfff1e6, emissiveIntensity: 0.0 });
   const walnut = pbrSet("american_walnut_veneer", 1.5, 1.5);
   const walnutMat = new THREE.MeshPhysicalMaterial({ map: walnut.map, normalMap: walnut.normalMap, normalScale: new THREE.Vector2(0.4, 0.4), roughness: 0.42, clearcoat: 0.5, clearcoatRoughness: 0.25, color: 0xc99d78 });
   const walnutV = pbrSet("american_walnut_veneer", 1, 2, { rot: Math.PI / 2 });
@@ -41,7 +44,7 @@ export function buildWorld(scene, { extEnv, models, quality }) {
   const blushFluted = new THREE.MeshPhysicalMaterial({ color: 0xe3c1b5, roughness: 0.45, clearcoat: 0.55, clearcoatRoughness: 0.2, normalMap: flute, normalScale: new THREE.Vector2(0.8, 0.8) });
   const brassFluted = new THREE.MeshStandardMaterial({ color: 0xc69b62, metalness: 1, roughness: 0.32, normalMap: flute, normalScale: new THREE.Vector2(1.6, 1.6) });
   const velvet = pbrSet("velour_velvet", 2, 2);
-  const velvetMat = new THREE.MeshPhysicalMaterial({ map: velvet.map, normalMap: velvet.normalMap, color: 0xd9a6a6, roughness: 0.9, sheen: 1, sheenRoughness: 0.5, sheenColor: new THREE.Color(0xffd9d2) });
+  const velvetMat = new THREE.MeshPhysicalMaterial({ map: velvet.map, normalMap: velvet.normalMap, color: 0xd9a6a6, roughness: 0.9, sheen: 0.6, sheenRoughness: 0.7, sheenColor: new THREE.Color(0xf0c8c0), side: THREE.FrontSide });
 
   // ======================= interior shell =======================
   const IN = new THREE.Group(); IN.name = "interior"; scene.add(IN);
@@ -54,7 +57,7 @@ export function buildWorld(scene, { extEnv, models, quality }) {
     floor.material = reflectiveFloor(floorMat, tex, tm);
     // render the reflection once per frame (the transmission pass would trigger it again)
     const orig = floor.onBeforeRender; let last = -1;
-    floor.onBeforeRender = function (r, s, c) { const f = W.frameId; if (c !== W.mainCamera || f === last || W.outdoors || (f & 1)) return; last = f; const nr = W.noReflect || []; for (const o of nr) o.visible = false; orig.call(this, r, s, c); for (const o of nr) o.visible = true; };
+    floor.onBeforeRender = function (r, s, c) { const f = W.frameId; if (c !== W.mainCamera || f === last || W.outdoors || (f & 1)) return; last = f; W.hideFor(W.noReflect, () => orig.call(this, r, s, c)); };
     W.reflector = floor;
   } else floor = new THREE.Mesh(new THREE.PlaneGeometry(fw, fd), floorMat);
   floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0, (DIM.front + DIM.back) / 2); floor.receiveShadow = true;
@@ -97,9 +100,9 @@ export function buildWorld(scene, { extEnv, models, quality }) {
   const wallUnit = (side) => {
     const s = side === "L" ? -1 : 1;
     const g = new THREE.Group(); g.position.set(s * DIM.x, 0, 0); g.rotation.y = -s * Math.PI / 2; IN.add(g);
-    const glow = side === "L" ? gradientTex("#f3d9cd", "#ecc9bb", "#d9ab9b") : gradientTex("#efcfcf", "#e2b4b6", "#c98f95");
+    const glow = side === "L" ? gradientTex("#e6c7b8", "#dcb5a5", "#c8998a") : gradientTex("#e3b9b9", "#d29fa2", "#b57a80");
     // backlit plaster: it takes light and shadow like a wall, with a soft glow from the hidden LED behind the arch
-    const glowMat = new THREE.MeshStandardMaterial({ map: glow, roughness: 0.92, emissive: 0xffffff, emissiveMap: glow, emissiveIntensity: side === "L" ? 0.26 : 0.24 });
+    const glowMat = new THREE.MeshStandardMaterial({ map: glow, roughness: 0.92, emissive: 0xffffff, emissiveMap: glow, emissiveIntensity: side === "L" ? 0.12 : 0.11 });
     const pil = side === "L" ? walnutVMat : fluted(plumFluted, 7);
     const zs = DIM.bayZ;
     // pilasters between and around bays
@@ -373,7 +376,7 @@ export function buildWorld(scene, { extEnv, models, quality }) {
       pair = new Reflector(discs, { textureWidth: 768, textureHeight: 384, color: 0xdcd8d3, clipBias: 0.003 });
       const orig = pair.onBeforeRender; let last = -1;
       const pw = new THREE.Vector3(), cw = new THREE.Vector3();
-      pair.onBeforeRender = function (r, s, c) { if (c !== W.mainCamera || W.frameId === last || W.outdoors) return; this.getWorldPosition(pw); if (pw.distanceToSquared(c.getWorldPosition(cw)) > 64) return; last = W.frameId; orig.call(this, r, s, c); };
+      pair.onBeforeRender = function (r, s, c) { if (c !== W.mainCamera || W.frameId === last || W.outdoors) return; this.getWorldPosition(pw); if (pw.distanceToSquared(c.getWorldPosition(cw)) > 64) return; last = W.frameId; W.hideFor(W.noMirror, () => orig.call(this, r, s, c)); };
     } else pair = new THREE.Mesh(discs, M.mirror);
     pair.position.set(0, 1.55, 0.052); g.add(pair);
     for (const x of [-0.7, 0.7]) {
@@ -413,13 +416,14 @@ export function buildWorld(scene, { extEnv, models, quality }) {
   scene.traverse(o => { if (o.isMesh && !o.isInstancedMesh && o.geometry && (o.geometry.type === "BoxGeometry" || o.geometry.type === "ExtrudeGeometry") && !o.material.transparent && !(o.material.transmission > 0)) { const b = new THREE.Box3().setFromObject(o); const sz = b.getSize(new THREE.Vector3()); if (sz.x * sz.y + sz.y * sz.z > 0.5 && sz.y > 0.5) W.occluders.push(o); } });
   // merge everything that never moves into a few meshes per material and area
   const skip = new Set([...W.products.map(i => i.root), ...W.doors.map(d => d.obj), ...W.emitters.map(e => e.obj).filter(Boolean)]);
+  if (typeof location !== "undefined" && location.search.includes("audit")) { const agg = {}; for (const r of [scene.getObjectByName("interior"), scene.getObjectByName("exterior")]) r.traverse(o => { if (!o.isMesh || o.isInstancedMesh) return; const g = o.geometry; const n = (g.index ? g.index.count : g.attributes.position.count) / 3; const k = (g.type === "BufferGeometry" ? (o.name || o.parent.name || "?") + "|" + (o.material.name || o.material.type) + "|" : "") + g.type + JSON.stringify(g.parameters || {}).replace(/"(path|shapes|points|options)":\{?\[?[^\]]*\]?\}?/g, "").slice(0, 90); agg[k] = agg[k] || [0, 0]; agg[k][0] += n; agg[k][1]++; }); W.audit = Object.entries(agg).sort((a, b) => b[1][0] - a[1][0]).slice(0, 30).map(([k, v]) => Math.round(v[0]) + " x" + v[1] + " " + k); }
   W.batchStats = batchStatic(scene, [scene.getObjectByName("interior"), scene.getObjectByName("exterior")], skip);
   return W;
 
   // ---------- helpers that need W ----------
   function shelfBlock(p, parent, cx, y, zc, maxW, { across = 5, deep = 2, spacing = 0.018 } = {}) {
     const holder = new THREE.Group(); holder.position.set(cx, y, zc); parent.add(holder);
-    LOD.seg = across > 6 ? 0.45 : 0.75; const proto = buildProduct(p); LOD.seg = 1;
+    LOD.seg = LOD.base * (across > 6 ? 0.45 : 0.75); const proto = buildProduct(p); LOD.seg = LOD.base;
     const stepX = proto.w + spacing, stepZ = proto.d + 0.012;
     const n = Math.max(1, Math.min(across, Math.floor(maxW / stepX)));
     // every copy on the shelf is drawn as one instance per part, so a row of 18 bottles costs as much as one
@@ -545,7 +549,7 @@ function buildExterior(scene, W, { ext, models, M, HI, wallMat }) {
       const small = PRODUCTS.find(p => p.id === (o.x < 0 ? "dew-serum" : "lip-sindoor"));
       for (const [px, ph, s] of [[-0.75, 0.55, o.x < 0 ? 3.2 : 4.2], [0.85, 0.75, o.x < 0 ? 2.6 : 3.4]]) { const b = buildProduct(small).root; b.scale.setScalar(s); b.position.set(px, y0 + ph, -0.05); b.rotation.y = 0.3; d.add(b); }
       if (models.brass) { const v = models.brass.clone(); v.position.set(-1.25, y0, -0.2); v.scale.setScalar(0.9); d.add(v); }
-      const sp = new THREE.SpotLight(0xffe7cf, HI ? 16 : 12, 4, 0.6, 0.6, 1.4); sp.position.set(0, 3.7, F - 0.2); sp.target.position.set(0, y0 + 0.4, F - 0.7); X.add(sp, sp.target);
+      const sp = new THREE.SpotLight(0xffe7cf, HI ? 16 : 12, 4, 0.6, 0.6, 1.4); sp.position.set(0, 3.7, F - 0.2); sp.target.position.set(0, y0 + 0.4, F - 0.7); X.add(sp, sp.target); W.frontLights.push(sp);
       W.obstacles.push({ x0: o.x - o.w / 2 - 0.2, x1: o.x + o.w / 2 + 0.2, z0: F - 1.2, z1: F + 0.2 });
     }
   }
@@ -643,9 +647,23 @@ function batchStatic(scene, roots, skip) {
   const groups = new Map(); let before = 0;
   const box = new THREE.Box3(), c = new THREE.Vector3();
   const sig = g => Object.keys(g.attributes).sort().map(k => { const a = g.attributes[k]; return a.isInterleavedBufferAttribute ? "X" : `${k}:${a.itemSize}:${a.array.constructor.name}:${a.normalized}`; }).join(",");
+  // many materials are clones with identical settings: give equal ones one key so their meshes merge too
+  const tx = t => t ? t.uuid : "";
+  const mkey = new Map(), canon = new Map();
+  const matKey = m => {
+    if (mkey.has(m)) return mkey.get(m);
+    let k = m.uuid;
+    if (!m.onBeforeCompile || m.onBeforeCompile === THREE.Material.prototype.onBeforeCompile) {
+      const f = v => (typeof v === "number" ? +v.toFixed(4) : v);
+      k = [m.type, m.color && m.color.getHexString(), m.emissive && m.emissive.getHexString(), f(m.emissiveIntensity), f(m.roughness), f(m.metalness), f(m.clearcoat), f(m.clearcoatRoughness), f(m.envMapIntensity), f(m.opacity), m.side, m.toneMapped, m.vertexColors, m.flatShading, m.depthWrite, m.polygonOffset, f(m.sheen), f(m.specularIntensity), f(m.ior),
+        tx(m.map), tx(m.normalMap), m.normalScale && m.normalScale.x.toFixed(3) + "," + m.normalScale.y.toFixed(3), tx(m.roughnessMap), tx(m.metalnessMap), tx(m.aoMap), tx(m.emissiveMap), tx(m.alphaMap), tx(m.envMap), tx(m.bumpMap), tx(m.clearcoatNormalMap), f(m.anisotropy), m.name].join("|");
+    }
+    mkey.set(m, k); if (!canon.has(k)) canon.set(k, m); return k;
+  };
   for (const root of roots) if (root) root.traverse(o => {
     if (!o.isMesh || o.isInstancedMesh || o.isSkinnedMesh) return;
     before++;
+    if (o.material && !Array.isArray(o.material) && o.material.transparent) o.material.forceSinglePass = true; // one draw, not back+front
     if (o.onBeforeRender !== THREE.Object3D.prototype.onBeforeRender) return;
     if (Array.isArray(o.material) || o.material.transparent || o.renderOrder !== 0) return;
     for (let p = o; p; p = p.parent) { if (skip.has(p) || !p.visible) return; }
@@ -653,9 +671,10 @@ function batchStatic(scene, roots, skip) {
     const g = o.geometry; const sg = sig(g);
     if (sg.includes("X") || (g.morphAttributes && Object.keys(g.morphAttributes).length)) return;
     box.setFromObject(o); box.getCenter(c);
-    const cell = Math.floor(c.x / 7) + ":" + Math.floor(c.z / 6) + ":" + (c.z > DIM.front + 0.3 ? "o" : "i");
-    const key = o.material.uuid + "|" + sg + "|" + o.castShadow + o.receiveShadow + "|" + cell;
-    if (!groups.has(key)) groups.set(key, { mat: o.material, cs: o.castShadow, rs: o.receiveShadow, list: [] });
+    const cell = Math.floor(c.x / 12) + ":" + Math.floor(c.z / 10) + ":" + (c.z > DIM.front + 0.3 ? "o" : "i");
+    const mk = matKey(o.material);
+    const key = mk + "|" + sg + "|" + o.castShadow + o.receiveShadow + "|" + cell;
+    if (!groups.has(key)) groups.set(key, { mat: canon.get(mk), cs: o.castShadow, rs: o.receiveShadow, list: [] });
     groups.get(key).list.push(o);
   });
   const out = new THREE.Group(); out.name = "batched"; let after = 0;
@@ -742,12 +761,12 @@ function reflectiveFloor(base, tex, tm) {
     sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nuniform sampler2D tReflect; varying vec4 vReflUv;")
       .replace("#include <opaque_fragment>", `
         vec2 rUv = vReflUv.xy / vReflUv.w + normal.xy * 0.006;
-        float bl = 0.004 + roughnessFactor * 0.012;
+        float bl = 0.002 + roughnessFactor * 0.007;
         vec3 refl = texture2D(tReflect, rUv).rgb * 0.36;
         refl += texture2D(tReflect, rUv + vec2(bl, 0.)).rgb * 0.16; refl += texture2D(tReflect, rUv - vec2(bl, 0.)).rgb * 0.16;
         refl += texture2D(tReflect, rUv + vec2(0., bl)).rgb * 0.16; refl += texture2D(tReflect, rUv - vec2(0., bl)).rgb * 0.16;
         float fres = 0.18 + 0.82 * pow(1.0 - clamp(dot(normalize(vViewPosition), normal), 0.0, 1.0), 4.0);
-        outgoingLight += refl * fres * 0.4 * (1.0 - roughnessFactor * 0.75);
+        outgoingLight += refl * fres * 0.5 * (1.0 - roughnessFactor * 0.75);
         #include <opaque_fragment>`);
   };
   m.customProgramCacheKey = () => "reflfloor";

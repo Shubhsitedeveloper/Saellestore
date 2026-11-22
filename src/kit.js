@@ -57,9 +57,9 @@ export function mats() {
   // clear glass for shelves and the shopfront: thin, reflective, slightly green at the edge
   M.shelfGlass = new THREE.MeshPhysicalMaterial({ color: 0xdfeee8, roughness: 0.04, transparent: true, opacity: 0.22, envMapIntensity: 0.8, depthWrite: false });
   M.windowGlass = new THREE.MeshPhysicalMaterial({ color: 0x9fb3b6, roughness: 0.02, metalness: 0.05, transparent: true, opacity: 0.12, envMapIntensity: 2.2, side: THREE.DoubleSide, depthWrite: false });
-  M.led = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.2, 1.85, 1.5), toneMapped: false });
+  M.led = new THREE.MeshBasicMaterial({ color: new THREE.Color(3.2, 2.7, 2.1), toneMapped: false });
   M.ledSoft = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.3, 1.05, 0.85), toneMapped: false });
-  M.opal = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.9, 1.6, 1.25), toneMapped: false });
+  M.opal = new THREE.MeshPhysicalMaterial({ color: 0xfff4e6, emissive: 0xffd6a0, emissiveIntensity: 2.6, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.05 });
   M.shadow = new THREE.MeshBasicMaterial({ alphaMap: blobTexture(), transparent: true, depthWrite: false, opacity: 0.5, color: 0x000000 });
   M.paper = new THREE.MeshStandardMaterial({ color: 0xf3ece4, roughness: 0.85 });
   return M;
@@ -127,7 +127,7 @@ export function box(w, h, d, mat, x, y, z, parent, r = 0) {
   return mesh(r > 0 ? rbox(w, h, d, r) : new THREE.BoxGeometry(w, h, d), mat, x, y, z, parent);
 }
 // level of detail for round things: shelf copies seen from a metre away don't need 56 sides
-export const LOD = { seg: 1 };
+export const LOD = { seg: 1, base: 1 };
 const segs = (n) => Math.max(10, Math.round(n * LOD.seg));
 export function cyl(rt, rb, h, mat, x, y, z, parent, seg = 40, open = false) {
   return mesh(new THREE.CylinderGeometry(rt, rb, h, segs(seg), 1, open), mat, x, y, z, parent);
