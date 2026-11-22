@@ -5,7 +5,8 @@
 <meta name="theme-color" content="#1E1418">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..700;1,6..96,400..600&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..700;1,6..96,400..600&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..700;1,6..96,400..600&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
 <style>/*CSS*/</style>
 <script type="importmap">
 { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/" } }
@@ -40,6 +41,7 @@
         <li><kbd>Drag</kbd> look around</li>
         <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</li>
         <li><kbd>Scroll</kbd> step forward</li>
+        <li><kbd>Tap</kbd> the floor to walk there</li>
       </ul>
     </div>
     <p class="st-intro__note">Saelle is a demo brand. Prices in ₹, no real payment is taken.</p>
@@ -53,6 +55,11 @@
         <p class="st-where" aria-live="polite"><span id="st-where">Entrance</span></p>
       </div>
       <div class="st-top__r">
+        <button class="st-pill st-pill--icon" type="button" data-sound-toggle aria-pressed="false" aria-label="Sound">
+          <svg class="i-snd-on" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M3 8v4h3l4 3V5L6 8H3z" fill="currentColor"/><path d="M13 7.5a3.5 3.5 0 0 1 0 5M15 5.5a6.5 6.5 0 0 1 0 9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          <svg class="i-snd-off" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M3 8v4h3l4 3V5L6 8H3z" fill="currentColor"/><path d="M13 8l4 4M17 8l-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          <span class="sr-only" data-sound-label>Sound off</span>
+        </button>
         <button class="st-pill" id="st-list-btn" type="button" aria-label="Browse as a list">
           <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M7 5h10M7 10h10M7 15h10M3.5 5h.01M3.5 10h.01M3.5 15h.01" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
           <span>List</span>
@@ -76,7 +83,8 @@
     </div>
 
     <div class="st-hint" id="st-hint" hidden>
-      <p><strong>Look around</strong> by dragging. <strong>Walk</strong> with <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>, the arrow keys or the scroll wheel.</p>
+      <p class="st-hint--fine"><strong>Look around</strong> by dragging. <strong>Walk</strong> with <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>, the arrow keys, the scroll wheel, or click the floor.</p>
+      <p class="st-hint--touch"><strong>Drag</strong> to look around. <strong>Tap the floor</strong> to walk there, or use the joystick.</p>
       <p>Select any <span class="st-hint__dot" aria-hidden="true"></span> to see the product and its price.</p>
     </div>
 
@@ -88,13 +96,14 @@
         <p class="st-bar__spec" id="st-bar-spec"></p>
       </div>
       <p class="st-bar__price" id="st-bar-price"></p>
+      <button class="st-btn st-btn--ghost st-bar__more" id="st-bar-more" type="button">Details</button>
       <button class="st-btn st-btn--ink" id="st-bar-add" type="button">
         <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M10 4v12M4 10h12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         <span>Add to basket</span>
       </button>
     </div>
 
-    <div class="st-joy" id="st-joy" hidden aria-hidden="true"><span class="st-joy__knob" id="st-joy-knob"></span></div>
+    <div class="st-joy" id="st-joy" hidden aria-hidden="true"><span class="st-joy__knob" id="st-joy-knob"></span><span class="st-joy__lbl">Move</span></div>
   </div>
 
   <!-- ===== the receipt at the counter ===== -->
@@ -132,23 +141,63 @@
     </div>
   </aside>
 
-  <!-- ===== list view (also used when 3D is not available) ===== -->
-  <section class="st-list" id="st-list" hidden aria-labelledby="st-list-title">
+  <!-- ===== list view: works at once, and is the whole store when 3D can't run ===== -->
+  <section class="st-list" id="st-list" hidden aria-labelledby="st-list-title" role="dialog" aria-modal="true">
     <div class="st-list__in">
       <header class="st-list__head">
         <div>
           <p class="st-slip__kick">Everything on the shelves</p>
-          <h2 id="st-list-title">Browse as a list</h2>
+          <h2 id="st-list-title">Shop the store</h2>
         </div>
-        <button class="st-pill st-pill--dark" id="st-list-close" type="button">Back to the store</button>
+        <div class="st-list__acts">
+          <button class="st-pill st-pill--icon st-pill--dark" type="button" data-sound-toggle aria-pressed="false" aria-label="Sound">
+          <svg class="i-snd-on" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M3 8v4h3l4 3V5L6 8H3z" fill="currentColor"/><path d="M13 7.5a3.5 3.5 0 0 1 0 5M15 5.5a6.5 6.5 0 0 1 0 9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          <svg class="i-snd-off" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M3 8v4h3l4 3V5L6 8H3z" fill="currentColor"/><path d="M13 8l4 4M17 8l-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          <span class="sr-only" data-sound-label>Sound off</span>
+        </button>
+          <button class="st-pill st-pill--dark" id="st-list-close" type="button">Back to the store</button>
+        </div>
       </header>
-      <div id="st-list-body"></div>
+      <div class="st-filters" role="search">
+        <label class="st-search"><span class="sr-only">Search products</span>
+          <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><circle cx="9" cy="9" r="5.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M13 13l4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+          <input id="st-q" type="search" placeholder="Search serum, rose, SPF…" autocomplete="off" enterkeyhint="search"></label>
+        <div class="st-chips" id="st-chips" role="group" aria-label="Category"></div>
+        <div class="st-selects">
+          <label><span class="sr-only">Price</span><select id="st-price"></select></label>
+          <label><span class="sr-only">Sort by</span><select id="st-sort"><option value="featured">Featured</option><option value="low">Price: low to high</option><option value="high">Price: high to low</option><option value="name">Name A–Z</option></select></label>
+        </div>
+      </div>
+      <div class="st-list__meta"><p id="st-count" aria-live="polite"></p><p class="st-list__basket"><span id="st-list-sum"></span> <button class="st-link st-link--ink" id="st-list-pay" type="button" hidden>Go to checkout</button></p></div>
+      <ul class="st-grid" id="st-list-body"></ul>
+      <div class="st-list__empty" id="st-list-empty" hidden><p>Nothing matches that. Try another word or category.</p><button class="st-btn st-btn--ghost" id="st-reset" type="button">Clear filters</button></div>
     </div>
   </section>
+
+  <!-- ===== product page ===== -->
+  <div class="st-pd" id="st-pd" hidden role="dialog" aria-modal="true" aria-labelledby="st-pd-name">
+    <article class="st-pd__card">
+      <button class="st-slip__x st-pd__x" id="st-pd-close" type="button" aria-label="Close product details">
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+      <div class="st-pd__media"><img id="st-pd-img" alt="" hidden><span class="st-card__swatch st-pd__art" id="st-pd-art" aria-hidden="true"></span></div>
+      <div class="st-pd__body">
+        <p class="st-pd__kick" id="st-pd-kick"></p>
+        <h2 class="st-pd__name" id="st-pd-name"></h2>
+        <p class="st-pd__spec"><span id="st-pd-spec"></span><strong id="st-pd-price"></strong></p>
+        <p class="st-pd__desc" id="st-pd-desc"></p>
+        <div class="st-pd__more"><h3>How to use</h3><p id="st-pd-use"></p></div>
+        <div class="st-pd__more"><h3>Key ingredients</h3><p id="st-pd-key"></p></div>
+        <div class="st-pd__acts">
+          <button class="st-btn st-btn--ink" id="st-pd-add" type="button"><svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M10 4v12M4 10h12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Add to basket</span></button>
+          <button class="st-btn st-btn--ghost" id="st-pd-shelf" type="button" hidden>See it on the shelf</button>
+        </div>
+      </div>
+    </article>
+  </div>
 
   <p class="st-nogl" id="st-nogl" hidden>Your browser could not open the 3D store, so here is everything on the shelves as a list.</p>
   <canvas class="st-confetti" id="st-confetti" aria-hidden="true"></canvas>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
 <script type="module">/*APP*/</script>

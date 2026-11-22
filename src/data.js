@@ -94,3 +94,42 @@ export const TOUR = [
 ];
 
 export const fmt = v => "₹" + v.toLocaleString("en-IN");
+
+// longer copy for the product page: what it is, how to use it, what's in it
+export const DETAILS = {
+  "dew-serum": ["A water-light serum with three weights of hyaluronic acid that sink in at different depths, so skin stays plump from morning to night.", "Press 3–4 drops into damp skin, morning and night, before cream.", "Hyaluronic acid, panthenol, glycerin"],
+  "night-serum": ["Bakuchiol smooths fine lines and evens tone like retinol does, without the redness, so it suits sensitive skin and every season.", "Use 3 drops at night on clean skin. Follow with SPF in the morning.", "Bakuchiol 1%, squalane, rosehip oil"],
+  "cloud-cream": ["A whipped cream that rebuilds a dry, tight skin barrier with ceramides and leaves a soft, non-greasy finish.", "Smooth a pea-sized amount over face and neck as the last step.", "Ceramide NP, squalane, shea butter"],
+  "rice-toner": ["Fermented rice water softens and brightens, preparing skin to take in serum. No alcohol, no fragrance.", "Pat onto skin with your palms after cleansing.", "Fermented rice water, niacinamide, allantoin"],
+  "glow-oil": ["A dry-touch facial oil with stable vitamin C that wakes up dull skin. Most people see a brighter tone within two weeks.", "Warm 2–3 drops in your palms and press over the face at night.", "Ethyl ascorbic acid, sea buckthorn, jojoba"],
+  "milk-cleanser": ["A low-foam milk wash that lifts sunscreen and the day's dust without leaving skin tight.", "Massage over damp skin for 30 seconds, then rinse.", "Oat milk, glycerin, mild coco-glucoside"],
+  "spf-50": ["Broad-spectrum SPF 50 PA++++ that leaves no white cast on any skin tone and sits well under makeup.", "Apply two finger-lengths as the last step of your morning routine. Reapply every 2–3 hours outdoors.", "Zinc oxide, tinosorb S, niacinamide"],
+  "lip-mask": ["A rich berry butter that melts into cracked lips overnight. By morning they feel smooth again.", "Apply a thick layer before bed.", "Shea butter, murumuru, vitamin E"],
+  "jasmine-night": ["Night-blooming jasmine over warm amber and a trace of vanilla. A soft, close scent that lasts all evening.", "Spray on pulse points from 15 cm away.", "Top: bergamot · Heart: jasmine sambac · Base: amber, vanilla"],
+  "oud-saffron": ["Smoky oud warmed by Kashmiri saffron and rose. Rich and deep, made for winter evenings.", "One or two sprays are enough. It projects for hours.", "Top: saffron · Heart: rose, leather · Base: oud, patchouli"],
+  "rose-atelier": ["A modern rose, dewy and green rather than powdery, with pink pepper and clean musk.", "Spray on skin and clothes for a longer trail.", "Top: pink pepper · Heart: Turkish rose · Base: white musk"],
+  "vetiver-rain": ["Earthy vetiver after the first monsoon rain, with a crisp grapefruit opening. Fresh, calm and unisex.", "Spray after a shower on warm skin.", "Top: grapefruit · Heart: petrichor accord · Base: vetiver, cedar"],
+  "neroli-bloom": ["Bright orange blossom and neroli in a light eau de toilette. An easy daytime scent.", "Spray generously. Reapply through the day.", "Top: neroli, mandarin · Heart: orange blossom · Base: musk"],
+  "sandal-mist": ["A light all-over mist of creamy sandalwood that fades softly through the day.", "Mist over body and hair after bathing.", "Sandalwood, aloe, glycerin"],
+  "lip-rosewood": ["A soft-matte rosewood brown that feels like nothing on the lips and does not dry them out.", "Apply straight from the bullet. Blot once for a stained look.", "Shea butter, jojoba esters, pigment"],
+  "lip-sindoor": ["A true sindoor red with a velvet matte finish, rich in colour from the first swipe.", "Line with the tip first, then fill in.", "Shea butter, jojoba esters, pigment"],
+  "lip-petal": ["A satin nude with a slight sheen that suits deeper and fairer skin alike.", "Wear alone or over lip liner.", "Castor seed oil, vitamin E, pigment"],
+  "gloss": ["A glass-clear high-shine gloss that is not sticky. Wear it alone or over lipstick.", "One coat from the centre of the lips outward.", "Polyisobutene, rosehip oil"],
+  "foundation": ["A medium-coverage foundation that looks like skin, with 24 shades built for Indian undertones.", "Dot on and blend with fingertips or a damp sponge.", "Hyaluronic acid, niacinamide, SPF 20"],
+  "palette": ["Twelve sunset shades in matte, shimmer and metallic, from soft peach to deep plum.", "Pat shimmers on with a fingertip, blend mattes with a brush.", "Mica, talc-free base"],
+  "blush": ["A buildable rose blush that melts into skin for a natural flush.", "Tap lightly and sweep up along the cheekbones.", "Squalane, silica, pigment"],
+  "mascara": ["A lifting, lengthening mascara that holds the curl all day and does not flake.", "Wiggle from the root to the tips. Add a second coat while wet.", "Carnauba wax, panthenol"],
+  "hair-oil": ["A traditional bhringraj and amla oil, light enough to leave on overnight, for stronger and shinier hair.", "Massage into the scalp, leave 1 hour or overnight, then wash.", "Bhringraj, amla, coconut and sesame oils"],
+  "shampoo": ["A gentle sulphate-free wash that repairs dry, coloured hair with silk protein.", "Lather into wet hair, rinse, and repeat if needed.", "Hydrolysed silk, argan oil"],
+  "conditioner": ["Detangles and smooths, with silk protein for shine.", "Comb through the lengths, leave 2 minutes, then rinse.", "Hydrolysed silk, shea butter"],
+  "ubtan-scrub": ["A classic ubtan of gram flour, turmeric and sandal, as a gentle weekly polish for glowing skin.", "Massage over damp skin in circles, then rinse.", "Besan, turmeric, sandalwood, walnut shell"],
+  "body-butter": ["A dense shea butter that softens dry elbows, knees and heels overnight.", "Warm between the palms and smooth over damp skin.", "Shea butter, cocoa butter, almond oil"],
+  "hand-cream": ["A fast-absorbing hand cream scented with saffron. It leaves hands soft and not greasy.", "Use as often as you like.", "Saffron extract, glycerin, shea butter"],
+  "glow-set": ["Our newest serum, with niacinamide 10% and rose water, that smooths texture and fades dark spots.", "Use 3 drops morning and night after toner.", "Niacinamide 10%, zinc, rose water"],
+};
+export const PRICE_BANDS = [
+  { id: "all", label: "Any price", test: () => true },
+  { id: "u1", label: "Under ₹1,000", test: p => p.price < 1000 },
+  { id: "1to2", label: "₹1,000–2,000", test: p => p.price >= 1000 && p.price <= 2000 },
+  { id: "o2", label: "Over ₹2,000", test: p => p.price > 2000 },
+];

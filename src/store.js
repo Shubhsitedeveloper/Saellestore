@@ -13,48 +13,20 @@ import { PRODUCTS, BY_ID, SECTIONS, SEC_BY_ID, TOUR, fmt } from "./data.js";
 import { buildProduct } from "./products.js";
 import { buildWorld, DIM } from "./world.js";
 
+import { ui, S, save, qtyOf, totals, listHooks, sound, syncList, openList, closeList, setThumbs, openDetail, closeDetail, detailOpen, params, REDUCED, COARSE, LOW, FIXED } from "./core.js";
+
 const gsap = window.gsap;
-const params = new URLSearchParams(location.search);
-if (params.has("nolag")) gsap.ticker.lagSmoothing(0);
-const $ = (s, r = document) => r.querySelector(s);
-const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
-const COARSE = matchMedia("(pointer: coarse)").matches;
-const LOW = params.has("low") || (!params.has("high") && (COARSE || innerWidth < 820 || (navigator.hardwareConcurrency || 8) <= 4));
 const EYE = 1.6;
-const FIXED = params.has("fixed"); // test runs: no adaptive quality
-
-const ui = {
-  canvas: $("#st-canvas"), intro: $("#st-intro"), enter: $("#st-enter"), load: $("#st-load"), loadBar: $("#st-load-bar"),
-  hud: $("#st-hud"), where: $("#st-where"), tourBtn: $("#st-tour"), cartBtn: $("#st-cart"), cartCount: $("#st-cart-count"), cartSum: $("#st-cart-sum"),
-  toast: $("#st-toast"), toastText: $("#st-toast-text"), bar: $("#st-bar"), barImg: $("#st-bar-img"), barKick: $("#st-bar-kick"), barName: $("#st-bar-name"),
-  barSpec: $("#st-bar-spec"), barPrice: $("#st-bar-price"), barAdd: $("#st-bar-add"), hint: $("#st-hint"), dots: $("#st-dots"), tip: $("#st-tip"),
-  slip: $("#st-slip"), slipList: $("#st-slip-list"), slipSub: $("#st-slip-sub"), slipTotal: $("#st-slip-total"), slipTax: $("#st-slip-tax"), slipCount: $("#st-slip-count"),
-  slipClose: $("#st-slip-close"), slipForm: $("#st-slip-form"), slipName: $("#st-name"), slipHead: $("#st-slip-head"), slipDone: $("#st-slip-done"),
-  slipAgain: $("#st-slip-again"), slipEmpty: $("#st-slip-empty"), slipOrder: $("#st-slip-order"), slipDate: $("#st-slip-date"), slipThanks: $("#st-slip-thanks"),
-  confetti: $("#st-confetti"), joy: $("#st-joy"), joyKnob: $("#st-joy-knob"), listBtn: $("#st-list-btn"), list: $("#st-list"), listClose: $("#st-list-close"),
-  listBody: $("#st-list-body"), introList: $("#st-intro-list"), nogl: $("#st-nogl")
-};
-
-// ---------------- basket state ----------------
-const KEY = "saelle-basket";
-let basket = [];
-try {
-  // merge duplicates and keep whole quantities 1..99, whatever an older version saved
-  const raw = JSON.parse(localStorage.getItem(KEY) || "[]"), m = new Map();
-  if (Array.isArray(raw)) for (const i of raw) { if (!i || !Object.hasOwn(BY_ID, i.id)) continue; const q = Math.floor(Number(i.q)); if (!(q > 0)) continue; m.set(i.id, Math.min(99, (m.get(i.id) || 0) + q)); }
-  basket = [...m].map(([id, q]) => ({ id, q }));
-} catch (e) { basket = []; }
-const save = () => { try { localStorage.setItem(KEY, JSON.stringify(basket)); } catch (e) {} };
-const qtyOf = id => (basket.find(i => i.id === id) || {}).q || 0;
-const totals = () => ({ n: basket.reduce((a, i) => a + i.q, 0), sum: basket.reduce((a, i) => a + BY_ID[i.id].price * i.q, 0) });
-
-const listHooks = {};
-
-// ---------------- WebGL check ----------------
 let renderer = null;
-try { renderer = new THREE.WebGLRenderer({ canvas: ui.canvas, antialias: false, powerPreference: "high-performance" }); } catch (e) { renderer = null; }
-if (!renderer) { ui.nogl.hidden = false; ui.intro.hidden = true; buildList(); syncCartDom(); openList(); }
-else boot().catch(err => { console.error(err); ui.load.textContent = "The 3D store could not open. Try the list view."; });
+
+// called by the loader once three.js is here
+export async function start() {
+  renderer = new THREE.WebGLRenderer({ canvas: ui.canvas, antialias: false, powerPreference: "high-performance" });
+  // a lost GPU (driver reset, too many tabs): say so and keep the list working
+  ui.canvas.addEventListener("webglcontextlost", (e) => { e.preventDefault(); window.__saelleFallback && window.__saelleFallback("The 3D view stopped (the graphics card was reset). Reload the page to walk in again; the list works meanwhile."); });
+  await boot();
+  S.has3D = true;
+}
 
 async function boot() {
   const DPR = Math.min(devicePixelRatio || 1, 1.5);
@@ -301,9 +273,20 @@ async function boot() {
 
   drawDesk("idle");
   syncCart();
-  buildList();
-  basket.forEach(i => cart.fill(BY_ID[i.id]));
+  S.basket.forEach(i => cart.fill(BY_ID[i.id]));
   listHooks.add = (id) => addToBasket(id);
+  listHooks.checkout = () => openSlip(false);
+  // the product page asks for a bigger render of one product (cached)
+  const bigShots = {};
+  listHooks.preview = (id) => bigShots[id] || (bigShots[id] = new Promise(res => requestAnimationFrame(() => res(makeThumbs(renderer, [BY_ID[id]], scene.environment, 512)[id]))));
+  // "see it on the shelf": walk there and point at it
+  listHooks.show = (id) => {
+    if (mode !== "free" && mode !== "tour") return;
+    stopTour(); userMoved = true;
+    const it = prodState[id]; const p = standFor(it);
+    walkTo(p.x, p.z, it.hotWorld.x, it.hotWorld.y, it.hotWorld.z, () => { pinnedId = id; setBar(id); });
+  };
+  setThumbs(thumbs);
   let started = false;
   listHooks.pause = (on) => { if (started) renderer.setAnimationLoop(on ? null : loop); };
 
@@ -319,7 +302,6 @@ async function boot() {
   ui.intro.classList.add("is-ready");
   if (ui.list.hidden) ui.enter.focus({ preventScroll: true });
   ui.enter.addEventListener("click", enter);
-  ui.introList.addEventListener("click", openList);
 
   function enter() {
     if (mode !== "intro") return;
@@ -349,9 +331,10 @@ async function boot() {
   function setExt(on) { extOn = on; for (const l of W.extLights) l.visible = on; }
   let frontOn = true;
   function setFront(on) { frontOn = on; for (const l of W.frontLights) l.visible = on; }
-  let doorsOpen = false;
+  let doorsOpen = false, doorsOpenSnd = false;
   function setDoors(open) { if (open === doorsOpen) return; doorsOpen = open; openDoors(open); }
   function openDoors(open) {
+    if (open && !doorsOpenSnd) sound.play("door"); doorsOpenSnd = open;
     doorsOpen = open;
     for (const d of W.doors) {
       gsap.killTweensOf(d.obj.rotation);
@@ -519,11 +502,14 @@ async function boot() {
     ui.barAdd.classList.toggle("is-added", !!q);
   }
   ui.barAdd.addEventListener("click", () => { if (barId) addToBasket(barId); });
+  ui.barMore.addEventListener("click", () => { if (barId) openDetail(barId, ui.barMore); });
+  ui.barImg.addEventListener("click", () => { if (barId) openDetail(barId, ui.barAdd); });
 
   function addToBasket(id) {
-    const ex = basket.find(i => i.id === id);
+    sound.play("add");
+    const ex = S.basket.find(i => i.id === id);
     if (ex && ex.q >= 99) { toast("You can take up to 99 of one product"); return; }
-    if (ex) ex.q++; else basket.push({ id, q: 1 });
+    if (ex) ex.q++; else S.basket.push({ id, q: 1 });
     save(); syncCart(); syncBarButton(); syncList();
     clearTimeout(hintTimer); ui.hint.classList.remove("is-on"); ui.hint.hidden = true; // the toast takes its place
     const it = prodState[id];
@@ -532,8 +518,8 @@ async function boot() {
     drawDesk(totals().n ? "ready" : "idle");
   }
   function removeOne(id) {
-    const ex = basket.find(i => i.id === id); if (!ex) return;
-    ex.q--; if (ex.q <= 0) { basket = basket.filter(i => i !== ex); cancelFly(id); cart.remove(id); }
+    const ex = S.basket.find(i => i.id === id); if (!ex) return;
+    ex.q--; if (ex.q <= 0) { S.basket = S.basket.filter(i => i !== ex); cancelFly(id); cart.remove(id); }
     save(); syncCart(); syncBarButton(); syncList(); renderSlip();
     drawDesk(totals().n ? "ready" : "idle");
   }
@@ -559,7 +545,7 @@ async function boot() {
         holder.scale.setScalar(s0 + (s1 - s0) * st.t);
         holder.rotation.y = rig.yaw + st.t * Math.PI * 0.8;
       },
-      onComplete: () => { delete flying[it.p.id]; if (qtyOf(it.p.id) > 0) { cart.place(holder, it.p.id); bumpCart(); } else scene.remove(holder); }
+      onComplete: () => { delete flying[it.p.id]; if (qtyOf(it.p.id) > 0) { cart.place(holder, it.p.id); bumpCart(); sound.play("land"); } else scene.remove(holder); }
     });
   }
   function bumpCart() {
@@ -595,7 +581,7 @@ async function boot() {
     ui.slipEmpty.hidden = t.n > 0;
     ui.slipForm.hidden = t.n === 0;
     ui.slipList.innerHTML = "";
-    for (const i of basket) {
+    for (const i of S.basket) {
       const p = BY_ID[i.id];
       const li = document.createElement("li"); li.dataset.id = i.id;
       li.innerHTML = `<span class="st-slip__q"></span><span class="st-slip__n"><span></span><small></small></span><span class="st-slip__v"></span><span class="st-slip__ctl"><button type="button" aria-label="Remove one">−</button><button type="button" aria-label="Add one">+</button></span>`;
@@ -648,7 +634,7 @@ async function boot() {
     confetti(1);
     ui.slipAgain.focus({ preventScroll: true });
     // a fresh basket for the next visit
-    basket = []; save(); for (const id in flying) cancelFly(id); cart.clear(); syncCart(); syncList(); syncBarButton();
+    S.basket = []; save(); for (const id in flying) cancelFly(id); cart.clear(); syncCart(); syncList(); syncBarButton();
   });
 
   // the screen on the till
@@ -684,7 +670,7 @@ async function boot() {
     ui.confetti.width = innerWidth * DPR; ui.confetti.height = innerHeight * DPR;
     const cols = ["#C9A46A", "#E9CFC5", "#B85C6E", "#FBF7F4", "#5A2E33", "#F2D9A6"];
     for (let i = 0; i < 170 * power; i++) bits.push({ x: innerWidth * (0.25 + Math.random() * 0.5), y: innerHeight * 0.38, vx: (Math.random() - 0.5) * 14, vy: -6 - Math.random() * 10, r: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 0.35, w: 7 + Math.random() * 6, h: 10 + Math.random() * 9, c: cols[i % cols.length], life: 0, petal: i % 3 === 0 });
-    confettiOn = true;
+    confettiOn = true; sound.play("pay");
   }
   function stepConfetti() {
     if (!confettiOn) return;
@@ -755,20 +741,21 @@ async function boot() {
   }, { passive: false });
   addEventListener("keydown", (e) => {
     if (e.key === "Escape") { if (slipOpen) closeSlip(); else if (!ui.list.hidden) closeList(); else if (mode === "tour") stopTour(); return; }
-    if (slipOpen) return;
+    if (slipOpen || detailOpen()) return;
     if (e.target.closest && e.target.closest("input, textarea, select")) return;
     if (mode !== "free" && mode !== "tour") return;
     const k = e.key.toLowerCase();
     if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", "q", "e", "shift"].includes(k)) {
       if (k.startsWith("arrow")) e.preventDefault();
       if (mode === "tour") stopTour();
+      if (mode === "free" && !keys[k]) { gsap.killTweensOf(rig); walkGen++; } // your own steps cancel a tap-walk
       userMoved = true; keys[k] = true;
     }
     if ((k === "enter" || k === " ") && e.target === document.body && barId) { e.preventDefault(); addToBasket(barId); }
   });
   addEventListener("keyup", (e) => { keys[e.key.toLowerCase()] = false; });
   addEventListener("blur", () => { for (const k in keys) keys[k] = false; });
-  ui.joy.addEventListener("pointerdown", (e) => { ui.joy.classList.add("is-active"); joy.active = true; joy.id = e.pointerId; ui.joy.setPointerCapture(e.pointerId); moveJoy(e); if (mode === "tour") stopTour(); userMoved = true; });
+  ui.joy.addEventListener("pointerdown", (e) => { ui.joy.classList.add("is-active"); joy.active = true; joy.id = e.pointerId; ui.joy.setPointerCapture(e.pointerId); moveJoy(e); if (mode === "tour") stopTour(); else { gsap.killTweensOf(rig); walkGen++; } userMoved = true; });
   ui.joy.addEventListener("pointermove", (e) => { if (joy.active && e.pointerId === joy.id) moveJoy(e); });
   const endJoy = () => { joy.active = false; joy.x = joy.y = 0; ui.joyKnob.style.transform = ""; ui.joy.classList.remove("is-active"); };
   ui.joy.addEventListener("pointerup", endJoy); ui.joy.addEventListener("pointercancel", endJoy); ui.joy.addEventListener("lostpointercapture", endJoy);
@@ -797,6 +784,32 @@ async function boot() {
     const id = hitAt((cx / innerWidth) * 2 - 1, -(cy / innerHeight) * 2 + 1);
     if (id) { if (mode === "tour") stopTour(); focusProduct(id, true); }
     else if (nearDesk() < 3.2 && deskHit(cx, cy)) openSlip(true);
+    else walkToTap(cx, cy);
+  }
+  // tap (or click) the floor to walk there: the easy way to move on a phone
+  const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), tapHit = new THREE.Vector3();
+  const tapRing = new THREE.Mesh(new THREE.RingGeometry(0.16, 0.2, 40), new THREE.MeshBasicMaterial({ color: 0xffe6c4, transparent: true, opacity: 0, depthWrite: false, toneMapped: false }));
+  tapRing.rotation.x = -Math.PI / 2; tapRing.renderOrder = 5; tapRing.visible = false; scene.add(tapRing);
+  function walkToTap(cx, cy) {
+    if (mode !== "free" && mode !== "tour") return;
+    ray.setFromCamera({ x: (cx / innerWidth) * 2 - 1, y: -(cy / innerHeight) * 2 + 1 }, camera);
+    if (!ray.ray.intersectPlane(floorPlane, tapHit)) return;
+    const d = tapHit.distanceTo(ray.ray.origin);
+    if (d > 14) return;
+    const wall = occRay; wall.set(ray.ray.origin, ray.ray.direction); wall.far = d - 0.05;
+    if (wall.intersectObjects(W.occluders, false).length) return; // tapped a wall or counter, not floor
+    // step back toward us until the spot is free
+    const dx = tapHit.x - rig.x, dz = tapHit.z - rig.z, L = Math.hypot(dx, dz); if (L < 0.4) return;
+    let x = tapHit.x, z = tapHit.z, k = 0;
+    while (blocked(x, z) && k++ < 20) { x -= dx / L * 0.2; z -= dz / L * 0.2; }
+    if (blocked(x, z) || Math.hypot(x - rig.x, z - rig.z) < 0.4) return;
+    if (mode === "tour") stopTour();
+    userMoved = true; gsap.killTweensOf(rig); walkGen++;
+    tapRing.position.set(x, 0.012, z); tapRing.scale.setScalar(0.6);
+    gsap.killTweensOf(tapRing.material); gsap.killTweensOf(tapRing.scale);
+    tapRing.visible = true; tapRing.material.opacity = 0.9; gsap.to(tapRing.material, { opacity: 0, duration: 1.4, ease: "power2.in", onComplete: () => { tapRing.visible = false; } }); gsap.to(tapRing.scale, { x: 1.4, y: 1.4, z: 1.4, duration: 1.4, ease: "power2.out" });
+    const ahead = Math.hypot(dx, dz) || 1;
+    walkTo(x, z, x + dx / ahead * 3, EYE - 0.15, z + dz / ahead * 3);
   }
 
   // ---------------- movement + collisions ----------------
@@ -977,38 +990,6 @@ async function boot() {
 
   window.__st = { loop, rig, startTour, stopTour, enter, addToBasket, openSlip, openDoors, get mode() { return mode; }, set mode(v) { mode = v; }, setBar, composer, renderer, W, scene, camera, cart };
 }
-
-// ================= list view (also the no-WebGL fallback) =================
-function buildList() {
-  ui.listBody.innerHTML = "";
-  for (const s of SECTIONS) {
-    const sec = document.createElement("section");
-    sec.className = "st-list__group";
-    sec.innerHTML = `<h3></h3><ul></ul>`;
-    sec.querySelector("h3").textContent = `${s.n} · ${s.name}`;
-    const ul = sec.querySelector("ul");
-    for (const p of PRODUCTS.filter(p => p.sec === s.id)) {
-      const li = document.createElement("li");
-      li.className = "st-list__item";
-      li.innerHTML = `<div><h4></h4><p></p></div><div class="st-list__buy"><strong></strong><button type="button" class="st-btn st-btn--ghost" data-id=""><span>Add</span></button></div>`;
-      li.querySelector("h4").textContent = p.name;
-      li.querySelector("p").textContent = `${p.size} · ${p.note}`;
-      li.querySelector("strong").textContent = fmt(p.price);
-      const b = li.querySelector("button"); b.dataset.id = p.id;
-      b.addEventListener("click", () => { if (listHooks.add) listHooks.add(p.id); else domAdd(p.id); syncList(); });
-      ul.appendChild(li);
-    }
-    ui.listBody.appendChild(sec);
-  }
-  syncList();
-}
-function domAdd(id) { const ex = basket.find(i => i.id === id); if (ex) ex.q++; else basket.push({ id, q: 1 }); save(); syncCartDom(); }
-function syncCartDom() { const t = totals(); ui.cartCount.textContent = t.n; ui.cartSum.textContent = t.n ? fmt(t.sum) : "Basket"; }
-function syncList() { ui.listBody.querySelectorAll("button[data-id]").forEach(b => { const q = qtyOf(b.dataset.id); b.querySelector("span").textContent = q ? `Added · ${q}` : "Add"; b.classList.toggle("is-added", !!q); }); }
-function openList() { ui.list.hidden = false; requestAnimationFrame(() => ui.list.classList.add("is-on")); listHooks.pause && listHooks.pause(true); ui.listClose.focus({ preventScroll: true }); }
-function closeList() { ui.list.classList.remove("is-on"); listHooks.pause && listHooks.pause(false); setTimeout(() => ui.list.hidden = true, 300); }
-ui.listBtn.addEventListener("click", openList);
-ui.listClose.addEventListener("click", () => { if (!renderer) return; closeList(); });
 
 // ================= the basket you carry =================
 function buildBasket() {
@@ -1206,8 +1187,8 @@ function makeCampaign(renderer, env, c) {
   return t;
 }
 
-function makeThumbs(renderer, list, env) {
-  const S = 192, out = {};
+function makeThumbs(renderer, list, env, px = 192) {
+  const S = px, out = {};
   const scene = new THREE.Scene(); scene.environment = env; scene.environmentIntensity = 1.0;
   scene.background = new THREE.Color(0xf3e6df);
   scene.add(new THREE.HemisphereLight(0xffffff, 0xd8c2b8, 1.1));
