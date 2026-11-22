@@ -11,7 +11,7 @@ export const DIM = { x: 7, front: 5, back: -17, ceil: 4.0, fT: 0.45, bayZ: [-0.6
 export function buildWorld(scene, { extEnv, models, quality }) {
   const HI = quality === "high";
   const M = mats();
-  const W = { frameId: 0, products: [], obstacles: [], occluders: [], emitters: [], doors: [], lights: [], blinkers: [], extMats: [], spinners: [] };
+  const W = { extLights: [], frameId: 0, products: [], obstacles: [], occluders: [], emitters: [], doors: [], lights: [], blinkers: [], extMats: [], spinners: [] };
   const rnd = mulberry(7);
   const ext = (m) => { m.envMap = extEnv; W.extMats.push(m); return m; };
 
@@ -49,12 +49,12 @@ export function buildWorld(scene, { extEnv, models, quality }) {
   marble.map.repeat.set(fw / 2.4, fd / 2.4); marble.normalMap.repeat.copy(marble.map.repeat); marble.roughnessMap.repeat.copy(marble.map.repeat);
   let floor;
   if (HI) {
-    floor = new Reflector(new THREE.PlaneGeometry(fw, fd), { textureWidth: Math.round(innerWidth * 0.5 * Math.min(devicePixelRatio, 1.5)), textureHeight: Math.round(innerHeight * 0.5 * Math.min(devicePixelRatio, 1.5)), clipBias: 0.002, multisample: 0 });
+    floor = new Reflector(new THREE.PlaneGeometry(fw, fd), { textureWidth: Math.round(innerWidth * 0.4), textureHeight: Math.round(innerHeight * 0.4), clipBias: 0.002, multisample: 0 });
     const tm = floor.material.uniforms.textureMatrix.value, tex = floor.getRenderTarget().texture;
     floor.material = reflectiveFloor(floorMat, tex, tm);
     // render the reflection once per frame (the transmission pass would trigger it again)
     const orig = floor.onBeforeRender; let last = -1;
-    floor.onBeforeRender = function (r, s, c) { const f = W.frameId; if (c !== W.mainCamera || f === last || W.outdoors) return; last = f; const nr = W.noReflect || []; for (const o of nr) o.visible = false; orig.call(this, r, s, c); for (const o of nr) o.visible = true; };
+    floor.onBeforeRender = function (r, s, c) { const f = W.frameId; if (c !== W.mainCamera || f === last || W.outdoors || (f & 1)) return; last = f; const nr = W.noReflect || []; for (const o of nr) o.visible = false; orig.call(this, r, s, c); for (const o of nr) o.visible = true; };
     W.reflector = floor;
   } else floor = new THREE.Mesh(new THREE.PlaneGeometry(fw, fd), floorMat);
   floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0, (DIM.front + DIM.back) / 2); floor.receiveShadow = true;
@@ -568,7 +568,7 @@ function buildExterior(scene, W, { ext, models, M, HI, wallMat }) {
     const pyr = mesh(new THREE.ConeGeometry(0.15, 0.12, 4), bronze, 0, 0.28, 0, cage); pyr.rotation.y = Math.PI / 4;
     for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) box(0.014, 0.36, 0.014, bronze, x * 0.085, 0.02, z * 0.085, cage);
     const glow = box(0.15, 0.3, 0.15, new THREE.MeshBasicMaterial({ color: new THREE.Color(2.4, 1.7, 1.0), toneMapped: false }), 0, 0.02, 0, cage); glow.castShadow = false;
-    const pl = new THREE.PointLight(0xffc98f, 7, 6, 1.8); pl.position.set(0, 0.02, 0.1); cage.add(pl);
+    const pl = new THREE.PointLight(0xffc98f, 7, 6, 1.8); pl.position.set(0, 0.02, 0.1); cage.add(pl); W.extLights.push(pl);
   }
   // upper floor windows: recessed, some lit behind sheer curtains, with iron balconettes
   upper.forEach((x, i) => {
@@ -615,7 +615,7 @@ function buildExterior(scene, W, { ext, models, M, HI, wallMat }) {
     W.obstacles.push({ x0: s * 2.25 - 0.45, x1: s * 2.25 + 0.45, z0: ztop + 0.3, z1: ztop + 1.2 });
   }
   // street lamps
-  if (models.lamp) for (const x of [-8.6, 8.6]) { const l = models.lamp.clone(); l.position.set(x, 0, F + FD + 4.9); l.rotation.y = Math.PI; X.add(l); const pl = new THREE.PointLight(0xffc27e, 9, 12, 1.9); pl.position.set(x, 3.7, F + FD + 4.4); X.add(pl); }
+  if (models.lamp) for (const x of [-8.6, 8.6]) { const l = models.lamp.clone(); l.position.set(x, 0, F + FD + 4.9); l.rotation.y = Math.PI; X.add(l); const pl = new THREE.PointLight(0xffc27e, 9, 12, 1.9); pl.position.set(x, 3.7, F + FD + 4.4); X.add(pl); W.extLights.push(pl); }
   // neighbouring buildings to close the street
   const neighbour = (x0, x1, h, tint, seed) => {
     const w = x1 - x0, g = new THREE.Group(); g.position.set((x0 + x1) / 2, 0, F + 0.2); X.add(g);

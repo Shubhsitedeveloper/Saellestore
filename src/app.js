@@ -7,7 +7,6 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { GLASS, mats, setAniso, redraw, texturesReady, FONT_D, FONT_B, BRAND, roundRect, spaced } from "./kit.js";
 import { PRODUCTS, BY_ID, SECTIONS, SEC_BY_ID, TOUR, fmt } from "./data.js";
@@ -57,7 +56,7 @@ if (!renderer) { ui.nogl.hidden = false; ui.intro.hidden = true; buildList(); sy
 else boot().catch(err => { console.error(err); ui.load.textContent = "The 3D store could not open. Try the list view."; });
 
 async function boot() {
-  const DPR = Math.min(devicePixelRatio || 1, LOW ? 1.25 : 1.5);
+  const DPR = Math.min(devicePixelRatio || 1, LOW ? 1.0 : 1.25);
   renderer.setPixelRatio(DPR);
   renderer.setSize(innerWidth, innerHeight, false);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -100,7 +99,8 @@ async function boot() {
   const norm = (o) => { if (!o) return null; const w = new THREE.Group(); o.position.set(0, 0, 0); o.updateMatrixWorld(true); const b = new THREE.Box3().setFromObject(o); const c = b.getCenter(new THREE.Vector3()); o.position.sub(new THREE.Vector3(c.x, b.min.y, c.z)); w.add(o); w.traverse(m => { if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; } }); return w; };
   const models = { tree: norm(tree), plant4: norm(plant4), vase1: norm(vase1), vase3: norm(vase3), brass: norm(brass), stool: norm(stool), ottoman: norm(ottoman), side: norm(side), lamp: norm(lamp) };
 
-  GLASS.cheap = LOW;
+  // transmission re-renders the whole store once more per frame: the clear-coated glass look costs nothing
+  GLASS.cheap = !params.has("glass");
   const W = buildWorld(scene, { extEnv, models, quality: LOW ? "low" : "high" });
   W.mainCamera = camera;
   await Promise.race([texturesReady(), new Promise(r => setTimeout(r, 20000))]);
@@ -123,7 +123,7 @@ async function boot() {
   }
   const desk = new THREE.SpotLight(0xffe2c4, 22, 8, 0.8, 0.9, 1.4); desk.position.set(0, 3.9, DIM.deskZ + 0.6); desk.target.position.set(0, 0.8, DIM.deskZ - 0.6); scene.add(desk, desk.target);
   // facade washers grazing the stone
-  for (const x of [-9.7, -2.0, 2.0, 9.7]) { const u = new THREE.SpotLight(0xffcf98, 48, 7, 0.36, 1, 1.5); u.position.set(x, 0.12, DIM.front + 1.05); u.target.position.set(x, 4.4, DIM.front + 0.62); scene.add(u, u.target); }
+  for (const x of [-9.7, -2.0, 2.0, 9.7]) { const u = new THREE.SpotLight(0xffcf98, 48, 7, 0.36, 1, 1.5); u.position.set(x, 0.12, DIM.front + 1.05); u.target.position.set(x, 4.4, DIM.front + 0.62); scene.add(u, u.target); W.extLights.push(u); }
   // outdoors the city light comes from the street HDRI: keep it as reflections, not as a flat fill
   for (const m of W.extMats) m.envMapIntensity = (m.metalness > 0.5 || m.transmission > 0 || m.clearcoat > 0.5) ? 0.8 : m.clearcoat > 0 ? 0.35 : 0.05;
   // the warm spill of the shop through the door and windows onto the pavement
@@ -154,21 +154,24 @@ async function boot() {
     gtao.updateGtaoMaterial({ radius: 0.4, distanceExponent: 1.8, thickness: 1, scale: 1.0, samples: 12 });
     gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 5, rings: 2, samples: 12 });
     gtao.blendIntensity = 1.0;
+    gtao.enabled = false; // switched on only once the frame rate shows there is room for it
     composer.addPass(gtao);
   }
   const bloom = new UnrealBloomPass(size.clone().multiplyScalar(0.5), 0.28, 0.55, 1.0);
   composer.addPass(bloom);
-  composer.addPass(new OutputPass());
   // the camera itself: a touch of lens fringing at the edges, vignette, a soft grade and fine film grain
   const lens = new ShaderPass({
     uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uRes: { value: new THREE.Vector2(innerWidth, innerHeight) }, uGrain: { value: LOW ? 0.018 : 0.028 }, uCA: { value: LOW ? 0.0 : 0.004 } },
     vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    // tone mapping + sRGB happen here too (one full-screen pass instead of two)
     fragmentShader: `uniform sampler2D tDiffuse; uniform float uTime; uniform vec2 uRes; uniform float uGrain; uniform float uCA; varying vec2 vUv;
       float h(vec2 p){ p = fract(p * vec2(443.897, 441.423)); p += dot(p, p.yx + 19.19); return fract((p.x + p.y) * p.x); }
       void main(){
         vec2 d = vUv - 0.5; float r2 = dot(d, d);
         vec2 off = d * r2 * uCA;
         vec3 c = vec3(texture2D(tDiffuse, vUv + off).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - off).b);
+        c = ACESFilmicToneMapping(c);
+        c = sRGBTransferOETF(vec4(c, 1.0)).rgb;
         float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
         c = mix(c, c * vec3(1.03, 1.0, 0.95), smoothstep(0.35, 0.9, lum));       // warm highlights
         c = mix(c, c + vec3(-0.004, 0.0, 0.012), 1.0 - smoothstep(0.0, 0.25, lum)); // cool, slightly lifted shadows
@@ -285,7 +288,9 @@ async function boot() {
   listHooks.pause = (on) => { if (started) renderer.setAnimationLoop(on ? null : loop); };
 
   // compile every shader now, so turning to a new corner never stalls; the room never moves, so shadows render once
-  try { await Promise.race([renderer.compileAsync(scene, camera), new Promise(r => setTimeout(r, 8000))]); } catch (e) { /* older drivers: compile lazily */ }
+  // inside, the street's lamps and facade washers are switched off (8 fewer lights for every pixel); compile both setups now so crossing the door never stalls
+  const compile = () => Promise.race([renderer.compileAsync(scene, camera), new Promise(r => setTimeout(r, 8000))]);
+  try { await compile(); setExt(false); await compile(); setExt(true); } catch (e) { /* older drivers: compile lazily */ }
   renderer.shadowMap.autoUpdate = false; renderer.shadowMap.needsUpdate = true;
 
   // ---------------- intro ----------------
@@ -320,6 +325,8 @@ async function boot() {
     showHint();
     if (!REDUCED) setTimeout(() => { if (mode === "free" && !userMoved && !slipOpen && ui.list.hidden) startTour(); }, 1200);
   }
+  let extOn = true;
+  function setExt(on) { extOn = on; for (const l of W.extLights) l.visible = on; }
   let doorsOpen = false;
   function setDoors(open) { if (open === doorsOpen) return; doorsOpen = open; openDoors(open); }
   function openDoors(open) {
@@ -872,8 +879,8 @@ async function boot() {
   // ---------------- loop ----------------
   const clock = new THREE.Clock();
   let frame = 0, fpsAcc = 0, fpsN = 0, bobT = 0, puffT = 3;
-  const RES = [1, 0.85, 0.72, 0.6]; let resLevel = 0, slowRuns = 0;
-  function applyRes() { const pr = DPR * RES[resLevel]; renderer.setPixelRatio(pr); composer.setPixelRatio(pr); composer.setSize(innerWidth, innerHeight); if (W.reflector) W.reflector.getRenderTarget().setSize(Math.round(innerWidth * 0.5 * pr), Math.round(innerHeight * 0.5 * pr)); }
+  const RES = [1, 0.85, 0.72, 0.6, 0.5]; let resLevel = 0, fastRuns = 0, gtaoTries = 0, gtaoBanned = false;
+  function applyRes() { const pr = DPR * RES[resLevel]; renderer.setPixelRatio(pr); composer.setPixelRatio(pr); composer.setSize(innerWidth, innerHeight); if (W.reflector) W.reflector.getRenderTarget().setSize(Math.round(innerWidth * 0.4 * pr), Math.round(innerHeight * 0.4 * pr)); }
   function loop() {
     const dt = Math.min(0.05, clock.getDelta());
     const t = clock.elapsedTime;
@@ -889,6 +896,7 @@ async function boot() {
     }
     applyRig();
     { const k = THREE.MathUtils.clamp((rig.z - DIM.front) / 3, 0, 1); hemi.intensity = 0.25 - 0.21 * k; renderer.toneMappingExposure = 1.14 - 0.14 * k; W.outdoors = rig.z > DIM.front + 1.2; }
+    { const want = rig.z > DIM.front - 1.0; if (want !== extOn) setExt(want); }
     // the tester atomiser puffs now and then
     puffT -= dt;
     for (const e of W.emitters) if (e.puff) { if (puffT < 0) { e.rate = 3.5; puffT = 5 + Math.random() * 3; } e.rate = Math.max(0, e.rate - dt * 5); }
@@ -902,14 +910,21 @@ async function boot() {
     stepConfetti();
     // keep it smooth: watch the frame time and trade resolution, then ambient occlusion, for frame rate
     if (!document.hidden && dt > 0 && dt < 0.25) { fpsAcc += dt; fpsN++; }
-    if (fpsN >= 60) {
+    // keep it smooth: every ~half second look at the frame time. Too slow: drop ambient occlusion, then resolution.
+    // Plenty of headroom for a while: earn them back, resolution first.
+    if (fpsN >= 30) {
       const ms = (fpsAcc / fpsN) * 1000; fpsAcc = 0; fpsN = 0;
-      if (ms > 24 && gtao && gtao.enabled) { gtao.enabled = false; }
-      else if (ms > 24 && resLevel < RES.length - 1) { resLevel++; applyRes(); slowRuns = 0; }
-      else if (ms < 13 && resLevel > 0) { if (++slowRuns > 4) { resLevel--; applyRes(); slowRuns = 0; } }
+      if (ms > 21) {
+        fastRuns = 0;
+        if (gtao && gtao.enabled) gtao.enabled = false;
+        else if (resLevel < RES.length - 1) { resLevel++; applyRes(); }
+      } else if (ms < 17.8 && ++fastRuns > 6) { // holding 60 fps (vsync hides any extra headroom)
+        fastRuns = 0;
+        if (resLevel > 0) { resLevel--; applyRes(); }
+        else if (gtao && !gtao.enabled && !gtaoBanned) { gtao.enabled = true; gtaoTries++; if (gtaoTries > 2) gtaoBanned = true; }
+      }
     }
   }
-  started = true;
   renderer.setAnimationLoop(ui.list.hidden ? loop : null);
   document.addEventListener("visibilitychange", () => { renderer.setAnimationLoop(document.hidden || !ui.list.hidden ? null : loop); clock.getDelta(); });
   let rz = 0, lastW = innerWidth;
@@ -918,7 +933,7 @@ async function boot() {
     if (document.activeElement === ui.slipName && innerWidth === lastW) return;
     lastW = innerWidth;
     renderer.setSize(innerWidth, innerHeight, false); composer.setSize(innerWidth, innerHeight); lens.uniforms.uRes.value.set(innerWidth, innerHeight); fov();
-    if (W.reflector) W.reflector.getRenderTarget().setSize(Math.round(innerWidth * 0.5 * DPR * RES[resLevel]), Math.round(innerHeight * 0.5 * DPR * RES[resLevel]));
+    if (W.reflector) W.reflector.getRenderTarget().setSize(Math.round(innerWidth * 0.4 * DPR * RES[resLevel]), Math.round(innerHeight * 0.4 * DPR * RES[resLevel]));
   }
   addEventListener("resize", () => { cancelAnimationFrame(rz); rz = requestAnimationFrame(onResize); });
   addEventListener("orientationchange", () => setTimeout(onResize, 250));
