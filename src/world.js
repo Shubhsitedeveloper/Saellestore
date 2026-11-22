@@ -12,6 +12,7 @@ export function buildWorld(scene, { extEnv, models, quality }) {
   const HI = quality === "high";
   const M = mats();
   const W = {
+    reflOn: true,
     // render something with a list of objects hidden, putting each back exactly as it was
     hideFor(list, fn) { if (!list || !list.length) return fn(); const st = W._vis && W._vis.length >= list.length ? W._vis : (W._vis = new Uint8Array(list.length * 2)); for (let i = 0; i < list.length; i++) { st[i] = list[i].visible ? 1 : 0; list[i].visible = false; } fn(); for (let i = 0; i < list.length; i++) list[i].visible = st[i] === 1; },
     extLights: [], frontLights: [], frameId: 0, products: [], obstacles: [], occluders: [], emitters: [], doors: [], lights: [], blinkers: [], extMats: [], spinners: [] };
@@ -57,7 +58,7 @@ export function buildWorld(scene, { extEnv, models, quality }) {
     floor.material = reflectiveFloor(floorMat, tex, tm);
     // render the reflection once per frame (the transmission pass would trigger it again)
     const orig = floor.onBeforeRender; let last = -1;
-    floor.onBeforeRender = function (r, s, c) { const f = W.frameId; if (c !== W.mainCamera || f === last || W.outdoors || (f & 1)) return; last = f; W.hideFor(W.noReflect, () => orig.call(this, r, s, c)); };
+    floor.onBeforeRender = function (r, s, c) { const f = W.frameId; if (c !== W.mainCamera || f === last || W.outdoors || !W.reflOn || (f & 1)) return; last = f; W.hideFor(W.noReflect, () => orig.call(this, r, s, c)); };
     W.reflector = floor;
   } else floor = new THREE.Mesh(new THREE.PlaneGeometry(fw, fd), floorMat);
   floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0, (DIM.front + DIM.back) / 2); floor.receiveShadow = true;
@@ -376,6 +377,7 @@ export function buildWorld(scene, { extEnv, models, quality }) {
       pair = new Reflector(discs, { textureWidth: 768, textureHeight: 384, color: 0xdcd8d3, clipBias: 0.003 });
       const orig = pair.onBeforeRender; let last = -1;
       const pw = new THREE.Vector3(), cw = new THREE.Vector3();
+      W.mirror = { mesh: pair, live: pair.material, still: M.mirror };
       pair.onBeforeRender = function (r, s, c) { if (c !== W.mainCamera || W.frameId === last || W.outdoors) return; this.getWorldPosition(pw); if (pw.distanceToSquared(c.getWorldPosition(cw)) > 64) return; last = W.frameId; W.hideFor(W.noMirror, () => orig.call(this, r, s, c)); };
     } else pair = new THREE.Mesh(discs, M.mirror);
     pair.position.set(0, 1.55, 0.052); g.add(pair);
@@ -754,11 +756,12 @@ function fluteNormal() {
 // physical floor + a planar reflection, roughness-aware and blurred a touch
 function reflectiveFloor(base, tex, tm) {
   const m = base.clone();
+  m.userData.reflAmt = { value: 1 };
   m.onBeforeCompile = (sh) => {
-    sh.uniforms.tReflect = { value: tex }; sh.uniforms.reflMatrix = { value: tm };
+    sh.uniforms.tReflect = { value: tex }; sh.uniforms.reflMatrix = { value: tm }; sh.uniforms.uReflAmt = m.userData.reflAmt;
     sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nuniform mat4 reflMatrix; varying vec4 vReflUv;")
       .replace("#include <project_vertex>", "#include <project_vertex>\nvReflUv = reflMatrix * vec4( position, 1.0 );");
-    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nuniform sampler2D tReflect; varying vec4 vReflUv;")
+    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nuniform sampler2D tReflect; uniform float uReflAmt; varying vec4 vReflUv;")
       .replace("#include <opaque_fragment>", `
         vec2 rUv = vReflUv.xy / vReflUv.w + normal.xy * 0.006;
         float bl = 0.002 + roughnessFactor * 0.007;
@@ -766,7 +769,7 @@ function reflectiveFloor(base, tex, tm) {
         refl += texture2D(tReflect, rUv + vec2(bl, 0.)).rgb * 0.16; refl += texture2D(tReflect, rUv - vec2(bl, 0.)).rgb * 0.16;
         refl += texture2D(tReflect, rUv + vec2(0., bl)).rgb * 0.16; refl += texture2D(tReflect, rUv - vec2(0., bl)).rgb * 0.16;
         float fres = 0.18 + 0.82 * pow(1.0 - clamp(dot(normalize(vViewPosition), normal), 0.0, 1.0), 4.0);
-        outgoingLight += refl * fres * 0.5 * (1.0 - roughnessFactor * 0.75);
+        outgoingLight += refl * fres * 0.5 * uReflAmt * (1.0 - roughnessFactor * 0.75);
         #include <opaque_fragment>`);
   };
   m.customProgramCacheKey = () => "reflfloor";

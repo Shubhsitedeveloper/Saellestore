@@ -58,6 +58,7 @@ else boot().catch(err => { console.error(err); ui.load.textContent = "The 3D sto
 
 async function boot() {
   const DPR = Math.min(devicePixelRatio || 1, 1.5);
+  const DEV_PR = devicePixelRatio || 1;
   renderer.setPixelRatio(DPR);
   renderer.setSize(innerWidth, innerHeight, false);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -246,8 +247,8 @@ async function boot() {
   W.noMirror = [...W.products.map(i => i.root), air.points, motes.points];
   // from the street, the back half of the shop is only a glow through the glass: skip its small things there
   const deep = []; { const v = new THREE.Vector3(); const batched = scene.getObjectByName("batched"); const interior = scene.getObjectByName("interior"); const skipBatched = (o) => { for (let p = o; p; p = p.parent) if (p === batched) return true; return false; };
-    for (const it of W.products) { it.root.getWorldPosition(v); if (v.z < DIM.front - 5.5) deep.push(it.root); }
-    interior.traverse(o => { if (o.name === "Scene" || /vase|plant|pachira|chair|ottoman|table/i.test(o.name) && o.parent && !/vase|plant|pachira|chair|ottoman|table/i.test(o.parent.name)) { o.getWorldPosition(v); if (v.z < DIM.front - 5.5 && !skipBatched(o)) deep.push(o); } }); }
+    for (const it of W.products) { it.root.getWorldPosition(v); if (v.z < DIM.front - (LOW ? 3.5 : 5.5)) deep.push(it.root); }
+    interior.traverse(o => { if (o.name === "Scene" || /vase|plant|pachira|chair|ottoman|table/i.test(o.name) && o.parent && !/vase|plant|pachira|chair|ottoman|table/i.test(o.parent.name)) { o.getWorldPosition(v); if (v.z < DIM.front - (LOW ? 3.5 : 5.5) && !skipBatched(o)) deep.push(o); } }); }
   let deepHidden = false;
   function setDeep(hide) { deepHidden = hide; for (const o of deep) o.visible = !hide; }
 
@@ -900,8 +901,25 @@ async function boot() {
   // ---------------- loop ----------------
   const clock = new THREE.Clock();
   let frame = 0, fpsAcc = 0, fpsN = 0, bobT = 0, puffT = 3;
-  const RES = [1, 0.85, 0.75]; let resLevel = 0, fastRuns = 0, gtaoTries = 0, gtaoBanned = false;
-  function applyRes() { const pr = DPR * RES[resLevel]; renderer.setPixelRatio(pr); composer.setPixelRatio(pr); composer.setSize(innerWidth, innerHeight); lens.uniforms.uPx.value.set(1 / (innerWidth * pr), 1 / (innerHeight * pr)); if (W.reflector) W.reflector.getRenderTarget().setSize(Math.round(innerWidth * 0.4 * pr), Math.round(innerHeight * 0.4 * pr)); }
+  // quality tiers: start light, earn the expensive things only while the device holds 60 fps
+  const TIERS = [
+    { pr: 1.0, bloom: false, refl: false, ao: false },
+    { pr: 1.25, bloom: true, refl: false, ao: false },
+    { pr: 1.5, bloom: true, refl: true, ao: false },
+    { pr: 1.5, bloom: true, refl: true, ao: true },
+  ];
+  const failed = TIERS.map(() => 0);
+  let tier = params.has("tier") ? +params.get("tier") : 1, fastRuns = 0;
+  function setTier(t) {
+    tier = Math.max(0, Math.min(TIERS.length - 1, t)); const T = TIERS[tier];
+    bloom.enabled = T.bloom;
+    if (gtao) gtao.enabled = T.ao;
+    W.reflOn = T.refl;
+    if (W.reflector) W.reflector.material.userData.reflAmt.value = T.refl ? 1 : 0;
+    if (W.mirror) W.mirror.mesh.material = T.refl ? W.mirror.live : W.mirror.still;
+    applyRes();
+  }
+  function applyRes() { const pr = Math.min(DEV_PR, TIERS[tier].pr); renderer.setPixelRatio(pr); composer.setPixelRatio(pr); composer.setSize(innerWidth, innerHeight); lens.uniforms.uPx.value.set(1 / (innerWidth * pr), 1 / (innerHeight * pr)); if (W.reflector) W.reflector.getRenderTarget().setSize(Math.round(innerWidth * 0.4 * pr), Math.round(innerHeight * 0.4 * pr)); }
   function loop() {
     const dt = Math.min(0.05, clock.getDelta());
     const t = clock.elapsedTime;
@@ -934,19 +952,16 @@ async function boot() {
     if (!document.hidden && dt > 0 && dt < 0.25) { fpsAcc += dt; fpsN++; }
     // keep it smooth: every ~half second look at the frame time. Too slow: drop ambient occlusion, then resolution.
     // Plenty of headroom for a while: earn them back, resolution first.
-    if (fpsN >= 30 && !FIXED) {
+    if (fpsN >= 30 && !FIXED && mode !== "intro" && mode !== "entering") {
       const ms = (fpsAcc / fpsN) * 1000; fpsAcc = 0; fpsN = 0;
-      if (ms > 21) {
+      if (ms > 21) { fastRuns = 0; if (tier > 0) { failed[tier]++; setTier(tier - 1); } }
+      else if (ms < 17.8 && ++fastRuns > 4) { // holding 60 fps (vsync hides any extra headroom)
         fastRuns = 0;
-        if (gtao && gtao.enabled) gtao.enabled = false;
-        else if (resLevel < RES.length - 1) { resLevel++; applyRes(); }
-      } else if (ms < 17.8 && ++fastRuns > 6) { // holding 60 fps (vsync hides any extra headroom)
-        fastRuns = 0;
-        if (resLevel > 0) { resLevel--; applyRes(); }
-        else if (gtao && !gtao.enabled && !gtaoBanned) { gtao.enabled = true; gtaoTries++; if (gtaoTries > 2) gtaoBanned = true; }
+        if (tier < TIERS.length - 1 && failed[tier + 1] < 2) setTier(tier + 1);
       }
     }
   }
+  setTier(tier);
   renderer.setAnimationLoop(ui.list.hidden ? loop : null);
   document.addEventListener("visibilitychange", () => { renderer.setAnimationLoop(document.hidden || !ui.list.hidden ? null : loop); clock.getDelta(); });
   let rz = 0, lastW = innerWidth;
@@ -955,7 +970,7 @@ async function boot() {
     if (document.activeElement === ui.slipName && innerWidth === lastW) return;
     lastW = innerWidth;
     renderer.setSize(innerWidth, innerHeight, false); composer.setSize(innerWidth, innerHeight); lens.uniforms.uRes.value.set(innerWidth, innerHeight); lens.uniforms.uPx.value.set(1 / (innerWidth * renderer.getPixelRatio()), 1 / (innerHeight * renderer.getPixelRatio())); fov();
-    if (W.reflector) W.reflector.getRenderTarget().setSize(Math.round(innerWidth * 0.4 * DPR * RES[resLevel]), Math.round(innerHeight * 0.4 * DPR * RES[resLevel]));
+    if (W.reflector) W.reflector.getRenderTarget().setSize(Math.round(innerWidth * 0.4 * renderer.getPixelRatio()), Math.round(innerHeight * 0.4 * renderer.getPixelRatio()));
   }
   addEventListener("resize", () => { cancelAnimationFrame(rz); rz = requestAnimationFrame(onResize); });
   addEventListener("orientationchange", () => setTimeout(onResize, 250));
