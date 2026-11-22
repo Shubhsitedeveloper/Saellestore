@@ -9,5 +9,9 @@
   },
   "devDependencies": {
     "esbuild": "^0.24.0"
+  },
+  "dependencies": {
+    "three": "0.170.0",
+    "gsap": "3.12.5"
   }
 }

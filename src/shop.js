@@ -13,25 +13,26 @@ function webglOK() {
 }
 export function fallback(msg) {
   S.has3D = false;
-  ui.nogl.textContent = msg || "Your browser could not open the 3D store, so here is everything on the shelves as a list.";
+  // the 3D store is gone: its buttons ("see it on the shelf", the 3D checkout) go with it
+  for (const k of ["show", "checkout", "add", "pause"]) delete core.listHooks[k];
+  core.syncList();
+  ui.noglMsg.textContent = msg || "The 3D store could not open on this browser, so here is everything on the shelves as a list.";
   ui.nogl.hidden = false; ui.intro.hidden = true; ui.hud.hidden = true;
   ui.list.classList.add("is-fallback");
   openList();
 }
 window.__saelleFallback = fallback;
+ui.retry.addEventListener("click", () => { const u = new URL(location.href); u.searchParams.delete("list"); u.searchParams.set("t", Date.now().toString(36)); location.href = u.href; });
 
 async function load3D() {
   if (params.has("list")) throw new Error("list only");
   if (!webglOK()) throw new Error("no webgl");
-  // gsap: first CDN, then a second one if that is blocked
-  if (!window.gsap) await loadScript("https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js").catch(() => loadScript("https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"));
+  // three.js and GSAP ship inside store.js on this same site, so no outside CDN can block the 3D store
   const url = new URL("store.js?v=__BUILD__", document.baseURI).href;
-  let mod;
-  if (window.HTMLScriptElement && HTMLScriptElement.supports && HTMLScriptElement.supports("importmap")) mod = await import(url);
-  else {
-    // Safari before 16.4 and other older browsers: teach them import maps first
-    await loadScript("https://cdn.jsdelivr.net/npm/es-module-shims@1.8.3/dist/es-module-shims.js");
-    mod = await window.importShim(url);
+  let mod, tries = 0;
+  for (;;) {
+    try { mod = await import(tries ? url + "&r=" + tries : url); break; }
+    catch (e) { if (++tries > 2 || !navigator.onLine) throw e; await new Promise(r => setTimeout(r, 1500 * tries)); } // flaky network: try again
   }
   await mod.start();
 }
@@ -40,5 +41,7 @@ const slow = setTimeout(() => { if (ui.enter.disabled) ui.load.textContent = "St
 load3D().then(() => clearTimeout(slow), (err) => {
   clearTimeout(slow);
   console.warn("3D store unavailable:", err && err.message);
-  fallback(err && err.message === "list only" ? "Here is everything on the shelves." : undefined);
+  const m = err && err.message;
+  if (m === "no webgl") ui.retry.hidden = true; // nothing to retry: this browser has no 3D graphics
+  fallback(m === "list only" ? "Here is everything on the shelves. The 3D walk-in store is one tap away." : m === "no webgl" ? "This browser has 3D graphics turned off, so here is everything on the shelves as a list." : undefined);
 });

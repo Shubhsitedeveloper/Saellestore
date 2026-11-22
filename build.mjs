@@ -1,8 +1,8 @@
 // Builds the store in two parts:
 //  - index.html: the page, styles and the small "shop" script (product list, filters, basket,
 //    product pages). It works on its own, so the list is usable at once and on any browser.
-//  - store.js: the 3D store (three.js stays on its CDN). The page loads it behind the list and
-//    falls back to the list if this browser can't run it.
+//  - store.js: the 3D store, with three.js and GSAP bundled in, so no outside CDN can block it.
+//    The page loads it behind the list and falls back to the list if this browser can't run it.
 import { build } from "esbuild";
 import fs from "fs";
 import path from "path";
@@ -12,7 +12,7 @@ const dir = path.dirname(fileURLToPath(import.meta.url));
 const minify = !process.env.DEV;
 // store.js reads the shop's live state through core-shim.js instead of bundling a second copy
 const shim = { name: "core-shim", setup(b) { b.onResolve({ filter: /\/core\.js$/ }, (a) => (a.importer.endsWith("core-shim.js") ? undefined : { path: `${dir}/src/core-shim.js` })); } };
-const store = await build({ entryPoints: [`${dir}/src/store.js`], bundle: true, format: "esm", write: false, minify, external: ["three", "three/addons/*"], target: "es2020", charset: "utf8", plugins: [shim] });
+const store = await build({ entryPoints: [`${dir}/src/store.js`], bundle: true, format: "esm", write: false, minify, target: "es2020", charset: "utf8", plugins: [shim] });
 const sjs = store.outputFiles[0].text;
 const hash = crypto.createHash("sha1").update(sjs).digest("hex").slice(0, 10);
 fs.writeFileSync(`${dir}/store.js`, sjs);

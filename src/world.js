@@ -98,6 +98,8 @@ export function buildWorld(scene, { extEnv, models, quality }) {
   // ======================= wall bays =======================
   const placed = {};
   for (const p of PRODUCTS) placed[p.id] = p;
+  const shelfGlowMat = new THREE.MeshBasicMaterial({ map: shelfGlowTex(), color: new THREE.Color(1.0, 0.8, 0.6), transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false });
+  const floorPoolMat = new THREE.MeshBasicMaterial({ map: floorPoolTex(), color: new THREE.Color(1.0, 0.78, 0.58), transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
   const wallUnit = (side) => {
     const s = side === "L" ? -1 : 1;
     const g = new THREE.Group(); g.position.set(s * DIM.x, 0, 0); g.rotation.y = -s * Math.PI / 2; IN.add(g);
@@ -143,7 +145,11 @@ export function buildWorld(scene, { extEnv, models, quality }) {
         const sh = box(nW - 0.02, 0.012, 0.36, M.shelfGlass, 0, y, 0.22, bay); sh.castShadow = false; sh.renderOrder = 3;
         box(nW - 0.02, 0.022, 0.012, M.brass, 0, y - 0.004, 0.405, bay).castShadow = false;
         const led = box(nW - 0.1, 0.006, 0.01, M.ledSoft, 0, y - 0.012, 0.38, bay); led.castShadow = false;
+        // the LED's light falling down the plaster below the shelf (painted on: no extra light to pay for)
+        const pool = new THREE.Mesh(new THREE.PlaneGeometry(nW - 0.06, 0.34), shelfGlowMat); pool.position.set(0, y - 0.18, 0.026); pool.name = "glowpool"; bay.add(pool);
       }
+      // warm wash of the track light on the floor in front of the bay
+      const fp = new THREE.Mesh(new THREE.PlaneGeometry(DIM.bayW + 0.6, 1.5), floorPoolMat); fp.rotation.x = -Math.PI / 2; fp.position.set(0, 0.004, 0.95); fp.name = "glowpool"; bay.add(fp);
       // what sits on each shelf
       const bayProducts = PRODUCTS.filter(p => p.slot.wall === side && p.slot.bay === bi);
       bayProducts.forEach(p => {
@@ -419,6 +425,14 @@ export function buildWorld(scene, { extEnv, models, quality }) {
   // merge everything that never moves into a few meshes per material and area
   const skip = new Set([...W.products.map(i => i.root), ...W.doors.map(d => d.obj), ...W.emitters.map(e => e.obj).filter(Boolean)]);
   if (typeof location !== "undefined" && location.search.includes("audit")) { const agg = {}; for (const r of [scene.getObjectByName("interior"), scene.getObjectByName("exterior")]) r.traverse(o => { if (!o.isMesh || o.isInstancedMesh) return; const g = o.geometry; const n = (g.index ? g.index.count : g.attributes.position.count) / 3; const k = (g.type === "BufferGeometry" ? (o.name || o.parent.name || "?") + "|" + (o.material.name || o.material.type) + "|" : "") + g.type + JSON.stringify(g.parameters || {}).replace(/"(path|shapes|points|options)":\{?\[?[^\]]*\]?\}?/g, "").slice(0, 90); agg[k] = agg[k] || [0, 0]; agg[k][0] += n; agg[k][1]++; }); W.audit = Object.entries(agg).sort((a, b) => b[1][0] - a[1][0]).slice(0, 30).map(([k, v]) => Math.round(v[0]) + " x" + v[1] + " " + k); }
+  // all the painted light pools share two materials: one draw each instead of ~30
+  for (const mat of [shelfGlowMat, floorPoolMat]) {
+    const list = []; scene.traverse(o => { if (o.isMesh && o.name === "glowpool" && o.material === mat) list.push(o); });
+    if (list.length < 2) continue;
+    const g = mergeGeometries(list.map(o => o.geometry.clone().applyMatrix4(o.matrixWorld)), false);
+    list.forEach(o => o.parent.remove(o));
+    const m = new THREE.Mesh(g, mat); m.matrixAutoUpdate = false; m.renderOrder = 2; m.name = "glowpools"; scene.getObjectByName("interior").add(m);
+  }
   W.batchStats = batchStatic(scene, [scene.getObjectByName("interior"), scene.getObjectByName("exterior")], skip);
   return W;
 
@@ -792,6 +806,22 @@ export function wordmarkTex(color) {
     g.addColorStop(0, "#f5dfb0"); g.addColorStop(0.45, "#c9a066"); g.addColorStop(0.55, "#a87f48"); g.addColorStop(1, "#e9cd96");
     x.fillStyle = g; x.textBaseline = "middle"; x.font = `500 ${h * 0.62}px ${FONT_D}`;
     spaced(x, "SAELLE", w / 2, h / 2 + h * 0.04, h * 0.16);
+  });
+}
+function shelfGlowTex() {
+  return canvasTex(256, 64, (x, w, h) => {
+    const v = x.createLinearGradient(0, 0, 0, h); v.addColorStop(0, "rgba(255,255,255,.95)"); v.addColorStop(0.18, "rgba(255,255,255,.55)"); v.addColorStop(0.55, "rgba(255,255,255,.16)"); v.addColorStop(1, "rgba(255,255,255,0)");
+    x.fillStyle = v; x.fillRect(0, 0, w, h);
+    // soften the ends, where the LED strip stops
+    x.globalCompositeOperation = "destination-in";
+    const e = x.createLinearGradient(0, 0, w, 0); e.addColorStop(0, "rgba(0,0,0,0)"); e.addColorStop(0.1, "rgba(0,0,0,1)"); e.addColorStop(0.9, "rgba(0,0,0,1)"); e.addColorStop(1, "rgba(0,0,0,0)");
+    x.fillStyle = e; x.fillRect(0, 0, w, h);
+  });
+}
+function floorPoolTex() {
+  return canvasTex(128, 128, (x, w, h) => {
+    const g = x.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2); g.addColorStop(0, "rgba(255,255,255,1)"); g.addColorStop(0.5, "rgba(255,255,255,.45)"); g.addColorStop(1, "rgba(255,255,255,0)");
+    x.fillStyle = g; x.fillRect(0, 0, w, h);
   });
 }
 function haloTex() {

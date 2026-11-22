@@ -13,9 +13,11 @@ import { PRODUCTS, BY_ID, SECTIONS, SEC_BY_ID, TOUR, fmt } from "./data.js";
 import { buildProduct } from "./products.js";
 import { buildWorld, DIM } from "./world.js";
 
-import { ui, S, save, qtyOf, totals, listHooks, sound, syncList, openList, closeList, setThumbs, openDetail, closeDetail, detailOpen, params, REDUCED, COARSE, LOW, FIXED } from "./core.js";
+import { ui, S, save, qtyOf, totals, listHooks, sound, syncList, openList, closeList, setThumbs, openDetail, announce, buzz, closeDetail, detailOpen, params, REDUCED, COARSE, LOW, FIXED } from "./core.js";
 
-const gsap = window.gsap;
+import { gsap } from "gsap";
+window.gsap = gsap; // handy for testing in the console
+if (params.has("nolag")) gsap.ticker.lagSmoothing(0);
 const EYE = 1.6;
 let renderer = null;
 
@@ -221,11 +223,12 @@ async function boot() {
   const deep = []; { const v = new THREE.Vector3(); const batched = scene.getObjectByName("batched"); const interior = scene.getObjectByName("interior"); const skipBatched = (o) => { for (let p = o; p; p = p.parent) if (p === batched) return true; return false; };
     for (const it of W.products) { it.root.getWorldPosition(v); if (v.z < DIM.front - (LOW ? 3.5 : 5.5)) deep.push(it.root); }
     interior.traverse(o => { if (o.name === "Scene" || /vase|plant|pachira|chair|ottoman|table/i.test(o.name) && o.parent && !/vase|plant|pachira|chair|ottoman|table/i.test(o.parent.name)) { o.getWorldPosition(v); if (v.z < DIM.front - (LOW ? 3.5 : 5.5) && !skipBatched(o)) deep.push(o); } }); }
+  if (LOW) scene.getObjectByName("interior").children.forEach(o => { if (o.name === "glowpools") deep.push(o); }); // painted light only matters once you are inside
   let deepHidden = false;
   function setDeep(hide) { deepHidden = hide; for (const o of deep) o.visible = !hide; }
 
   // ---------------- thumbnails ----------------
-  const thumbs = makeThumbs(renderer, PRODUCTS, scene.environment);
+  // (product photos ship with the site: see assets/thumbs, made with __st.makeThumbs)
 
   // ---------------- campaign prints on the bare walls, shot like real product photography ----------------
   const CAMPAIGNS = [
@@ -266,6 +269,7 @@ async function boot() {
 
   // ---------------- state ----------------
   let mode = "intro";
+  let navId = null; // the product picked with N/P, even while still walking to it
   let hoverId = null, pinnedId = null, tourTl = null, userMoved = false;
   const keys = {}; const vel = new THREE.Vector2(); let wheelV = 0;
   const joy = { x: 0, y: 0, active: false };
@@ -276,17 +280,13 @@ async function boot() {
   S.basket.forEach(i => cart.fill(BY_ID[i.id]));
   listHooks.add = (id) => addToBasket(id);
   listHooks.checkout = () => openSlip(false);
-  // the product page asks for a bigger render of one product (cached)
-  const bigShots = {};
-  listHooks.preview = (id) => bigShots[id] || (bigShots[id] = new Promise(res => requestAnimationFrame(() => res(makeThumbs(renderer, [BY_ID[id]], scene.environment, 512)[id]))));
   // "see it on the shelf": walk there and point at it
   listHooks.show = (id) => {
     if (mode !== "free" && mode !== "tour") return;
     stopTour(); userMoved = true;
     const it = prodState[id]; const p = standFor(it);
-    walkTo(p.x, p.z, it.hotWorld.x, it.hotWorld.y, it.hotWorld.z, () => { pinnedId = id; setBar(id); });
+    walkTo(p.x, p.z, it.hotWorld.x, it.hotWorld.y, it.hotWorld.z, () => { pinnedId = id; if (navId === id) navId = null; setBar(id); });
   };
-  setThumbs(thumbs);
   let started = false;
   listHooks.pause = (on) => { if (started) renderer.setAnimationLoop(on ? null : loop); };
 
@@ -469,7 +469,7 @@ async function boot() {
   function focusProduct(id, pin) {
     if (!pin) return;
     userMoved = true;
-    pinnedId = id; const it = prodState[id];
+    pinnedId = id; navId = null; const it = prodState[id];
     if (mode !== "tour") {
       gsap.killTweensOf(rig);
       const yaw = shortest(rig.yaw, lookYaw(rig.x, rig.z, it.hotWorld.x, it.hotWorld.z));
@@ -485,7 +485,7 @@ async function boot() {
     ui.bar.inert = false;
     highlight(id, 0.06);
     const p = BY_ID[id], s = SEC_BY_ID[p.sec];
-    ui.barImg.src = thumbs[id] || "";
+    ui.barImg.src = S.thumbs[id] || "";
     ui.barKick.textContent = p.hero ? "New launch" : `${s.n} · ${s.name}`;
     ui.barName.textContent = p.name;
     ui.barSpec.textContent = `${p.size} · ${p.note}`;
@@ -506,7 +506,7 @@ async function boot() {
   ui.barImg.addEventListener("click", () => { if (barId) openDetail(barId, ui.barAdd); });
 
   function addToBasket(id) {
-    sound.play("add");
+    sound.play("add"); buzz(12);
     const ex = S.basket.find(i => i.id === id);
     if (ex && ex.q >= 99) { toast("You can take up to 99 of one product"); return; }
     if (ex) ex.q++; else S.basket.push({ id, q: 1 });
@@ -741,21 +741,34 @@ async function boot() {
   }, { passive: false });
   addEventListener("keydown", (e) => {
     if (e.key === "Escape") { if (slipOpen) closeSlip(); else if (!ui.list.hidden) closeList(); else if (mode === "tour") stopTour(); return; }
-    if (slipOpen || detailOpen()) return;
+    if (slipOpen || detailOpen() || !ui.list.hidden || !S.has3D) return;
     if (e.target.closest && e.target.closest("input, textarea, select")) return;
     if (mode !== "free" && mode !== "tour") return;
     const k = e.key.toLowerCase();
     if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", "q", "e", "shift"].includes(k)) {
       if (k.startsWith("arrow")) e.preventDefault();
       if (mode === "tour") stopTour();
-      if (mode === "free" && !keys[k]) { gsap.killTweensOf(rig); walkGen++; } // your own steps cancel a tap-walk
+      if (mode === "free" && !keys[k]) { gsap.killTweensOf(rig); walkGen++; navId = null; } // your own steps cancel a tap-walk
       userMoved = true; keys[k] = true;
     }
-    if ((k === "enter" || k === " ") && e.target === document.body && barId) { e.preventDefault(); addToBasket(barId); }
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if ((k === "enter" || k === " " || k === "+") && (e.target === document.body || e.target === ui.canvas) && (navId || barId)) { e.preventDefault(); addToBasket(navId || barId); return; }
+    if (e.target.closest && e.target.closest("button, a")) return;
+    // shortcuts: N/P step through the products, L the list, T the tour, M the sound, C the receipt
+    if (k === "n" || k === "p" || k === "]" || k === "[") {
+      e.preventDefault();
+      const cur = PRODUCTS.findIndex(p => p.id === (navId || barId || pinnedId));
+      const step = (k === "n" || k === "]") ? 1 : -1;
+      const next = PRODUCTS[(cur < 0 ? (step > 0 ? 0 : PRODUCTS.length - 1) : (cur + step + PRODUCTS.length) % PRODUCTS.length)];
+      navId = next.id; listHooks.show(next.id); setBar(next.id); announce(`${next.name}, ${fmt(next.price)}. Press Enter to add it to the basket.`);
+    } else if (k === "l" || k === "/") { e.preventDefault(); openList(); }
+    else if (k === "t") { if (mode === "tour") stopTour(); else startTour(); }
+    else if (k === "m") { sound.set(!sound.on); announce(sound.on ? "Sound on" : "Sound off"); }
+    else if (k === "c" && S.basket.length) openSlip(false);
   });
   addEventListener("keyup", (e) => { keys[e.key.toLowerCase()] = false; });
   addEventListener("blur", () => { for (const k in keys) keys[k] = false; });
-  ui.joy.addEventListener("pointerdown", (e) => { ui.joy.classList.add("is-active"); joy.active = true; joy.id = e.pointerId; ui.joy.setPointerCapture(e.pointerId); moveJoy(e); if (mode === "tour") stopTour(); else { gsap.killTweensOf(rig); walkGen++; } userMoved = true; });
+  ui.joy.addEventListener("pointerdown", (e) => { ui.joy.classList.add("is-active"); joy.active = true; joy.id = e.pointerId; ui.joy.setPointerCapture(e.pointerId); moveJoy(e); navId = null; if (mode === "tour") stopTour(); else { gsap.killTweensOf(rig); walkGen++; } userMoved = true; });
   ui.joy.addEventListener("pointermove", (e) => { if (joy.active && e.pointerId === joy.id) moveJoy(e); });
   const endJoy = () => { joy.active = false; joy.x = joy.y = 0; ui.joyKnob.style.transform = ""; ui.joy.classList.remove("is-active"); };
   ui.joy.addEventListener("pointerup", endJoy); ui.joy.addEventListener("pointercancel", endJoy); ui.joy.addEventListener("lostpointercapture", endJoy);
@@ -804,7 +817,7 @@ async function boot() {
     while (blocked(x, z) && k++ < 20) { x -= dx / L * 0.2; z -= dz / L * 0.2; }
     if (blocked(x, z) || Math.hypot(x - rig.x, z - rig.z) < 0.4) return;
     if (mode === "tour") stopTour();
-    userMoved = true; gsap.killTweensOf(rig); walkGen++;
+    userMoved = true; gsap.killTweensOf(rig); walkGen++; navId = null; buzz(6);
     tapRing.position.set(x, 0.012, z); tapRing.scale.setScalar(0.6);
     gsap.killTweensOf(tapRing.material); gsap.killTweensOf(tapRing.scale);
     tapRing.visible = true; tapRing.material.opacity = 0.9; gsap.to(tapRing.material, { opacity: 0, duration: 1.4, ease: "power2.in", onComplete: () => { tapRing.visible = false; } }); gsap.to(tapRing.scale, { x: 1.4, y: 1.4, z: 1.4, duration: 1.4, ease: "power2.out" });
@@ -892,7 +905,7 @@ async function boot() {
       const score = Math.hypot(sx, sy * 1.3) + dist * 0.05;
       if (dist < 4.5 && score < bestScore) { bestScore = score; best = it.p.id; }
     }
-    let want = pinnedId || hoverId || (bestScore < 0.5 ? best : null);
+    let want = navId || pinnedId || hoverId || (bestScore < 0.5 ? best : null);
     if (!live) want = null;
     if (want && pinnedId && !hoverId) { const it = prodState[pinnedId]; if (Math.hypot(it.hotWorld.x - rig.x, it.hotWorld.z - rig.z) > 6) { pinnedId = null; want = best; } }
     setBar(want);
@@ -988,7 +1001,7 @@ async function boot() {
   addEventListener("resize", () => { cancelAnimationFrame(rz); rz = requestAnimationFrame(onResize); });
   addEventListener("orientationchange", () => setTimeout(onResize, 250));
 
-  window.__st = { loop, rig, startTour, stopTour, enter, addToBasket, openSlip, openDoors, get mode() { return mode; }, set mode(v) { mode = v; }, setBar, composer, renderer, W, scene, camera, cart };
+  window.__st = { makeThumbs: (px) => makeThumbs(renderer, PRODUCTS, scene.environment, px), loop, rig, startTour, stopTour, enter, addToBasket, openSlip, openDoors, get mode() { return mode; }, set mode(v) { mode = v; }, setBar, composer, renderer, W, scene, camera, cart };
 }
 
 // ================= the basket you carry =================

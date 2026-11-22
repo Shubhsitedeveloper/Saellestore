@@ -8,12 +8,11 @@
 <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..700;1,6..96,400..600&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..700;1,6..96,400..600&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
 <style>/*CSS*/</style>
-<script type="importmap">
-{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/" } }
-</script>
 
 <!-- SAELLE is a made-up brand for this demo. 3D assets: Poly Haven (CC0) textures, HDRI and models; products are modelled in code. -->
-<div class="st" id="st">
+<main class="st" id="st">
+  <button class="st-skip" id="st-skip" type="button">Skip to the product list</button>
+  <p class="st-sr" id="st-sr" aria-live="polite"></p>
   <canvas id="st-canvas" class="st-canvas" role="img" aria-label="3D beauty store. Drag to look around, use W A S D or the arrow keys to walk, and select a product to see it."></canvas>
   <div class="st-dots" id="st-dots"></div>
   <div class="st-tip" id="st-tip" aria-hidden="true"></div>
@@ -42,6 +41,8 @@
         <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</li>
         <li><kbd>Scroll</kbd> step forward</li>
         <li><kbd>Tap</kbd> the floor to walk there</li>
+        <li><kbd>N</kbd><kbd>P</kbd> next / previous product</li>
+        <li><kbd>L</kbd> list · <kbd>T</kbd> tour · <kbd>M</kbd> sound</li>
       </ul>
     </div>
     <p class="st-intro__note">Saelle is a demo brand. Prices in ₹, no real payment is taken.</p>
@@ -83,7 +84,7 @@
     </div>
 
     <div class="st-hint" id="st-hint" hidden>
-      <p class="st-hint--fine"><strong>Look around</strong> by dragging. <strong>Walk</strong> with <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>, the arrow keys, the scroll wheel, or click the floor.</p>
+      <p class="st-hint--fine"><strong>Look around</strong> by dragging. <strong>Walk</strong> with <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>, the arrow keys, the scroll wheel, or click the floor. Press <kbd>N</kbd> to jump to the next product.</p>
       <p class="st-hint--touch"><strong>Drag</strong> to look around. <strong>Tap the floor</strong> to walk there, or use the joystick.</p>
       <p>Select any <span class="st-hint__dot" aria-hidden="true"></span> to see the product and its price.</p>
     </div>
@@ -107,7 +108,7 @@
   </div>
 
   <!-- ===== the receipt at the counter ===== -->
-  <aside class="st-slip" id="st-slip" hidden aria-labelledby="st-slip-title" role="dialog" aria-modal="true">
+  <div class="st-slip" id="st-slip" hidden aria-labelledby="st-slip-title" role="dialog" aria-modal="true">
     <div class="st-slip__paper">
       <button class="st-slip__x" id="st-slip-close" type="button" aria-label="Close the receipt">
         <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
@@ -139,7 +140,7 @@
       <button class="st-btn st-btn--ghost st-btn--block st-slip__again" id="st-slip-again" type="button">Keep shopping</button>
       <p class="st-slip__foot">Thank you for visiting · Returns within 14 days</p>
     </div>
-  </aside>
+  </div>
 
   <!-- ===== list view: works at once, and is the whole store when 3D can't run ===== -->
   <section class="st-list" id="st-list" hidden aria-labelledby="st-list-title" role="dialog" aria-modal="true">
@@ -158,6 +159,7 @@
           <button class="st-pill st-pill--dark" id="st-list-close" type="button">Back to the store</button>
         </div>
       </header>
+      <div class="st-nogl" id="st-nogl" hidden><p id="st-nogl-msg" role="status"></p><button class="st-link st-link--ink" id="st-retry" type="button">Open the 3D store</button></div>
       <div class="st-filters" role="search">
         <label class="st-search"><span class="sr-only">Search products</span>
           <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><circle cx="9" cy="9" r="5.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M13 13l4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
@@ -180,24 +182,30 @@
       <button class="st-slip__x st-pd__x" id="st-pd-close" type="button" aria-label="Close product details">
         <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
       </button>
-      <div class="st-pd__media"><img id="st-pd-img" alt="" hidden><span class="st-card__swatch st-pd__art" id="st-pd-art" aria-hidden="true"></span></div>
+      <div class="st-pd__media" id="st-pd-media"><img id="st-pd-img" alt="" hidden><span class="st-card__swatch st-pd__art" id="st-pd-art" aria-hidden="true"></span>
+        <div class="st-pd__nav">
+          <button class="st-pd__step" id="st-pd-prev" type="button" aria-label="Previous product"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M10 3L5 8l5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <span class="st-pd__pos" id="st-pd-pos"></span>
+          <button class="st-pd__step" id="st-pd-next" type="button" aria-label="Next product"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        </div>
+      </div>
       <div class="st-pd__body">
         <p class="st-pd__kick" id="st-pd-kick"></p>
         <h2 class="st-pd__name" id="st-pd-name"></h2>
         <p class="st-pd__spec"><span id="st-pd-spec"></span><strong id="st-pd-price"></strong></p>
         <p class="st-pd__desc" id="st-pd-desc"></p>
         <div class="st-pd__more"><h3>How to use</h3><p id="st-pd-use"></p></div>
-        <div class="st-pd__more"><h3>Key ingredients</h3><p id="st-pd-key"></p></div>
+        <div class="st-pd__more"><h3>Key ingredients</h3><ul class="st-pd__keys" id="st-pd-key"></ul></div>
         <div class="st-pd__acts">
           <button class="st-btn st-btn--ink" id="st-pd-add" type="button"><svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M10 4v12M4 10h12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Add to basket</span></button>
           <button class="st-btn st-btn--ghost" id="st-pd-shelf" type="button" hidden>See it on the shelf</button>
         </div>
+        <div class="st-pd__pair"><h3>Pairs well with</h3><ul id="st-pd-pair"></ul></div>
       </div>
     </article>
   </div>
 
-  <p class="st-nogl" id="st-nogl" hidden>Your browser could not open the 3D store, so here is everything on the shelves as a list.</p>
   <canvas class="st-confetti" id="st-confetti" aria-hidden="true"></canvas>
-</div>
+</main>
 
 <script type="module">/*APP*/</script>
